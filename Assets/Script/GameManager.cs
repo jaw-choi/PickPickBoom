@@ -168,17 +168,16 @@ public sealed class GameManager : MonoBehaviour
         string message = selectedCard.GoodItemType switch
         {
             GoodItemType.Shield when playerState.TryGainShield() => hideResultMessage
-                ? "저주 때문에 결과 문구는 흐렸지만, 방패를 얻었습니다. 다음 층으로 이동합니다."
-                : "방패를 획득했습니다. 다음 층으로 이동합니다.",
+                ? "저주 때문에 결과 문구는 흐렸지만, 방패를 얻었습니다. 같은 층에서 다시 카드를 선택하세요."
+                : "방패를 획득했습니다. 같은 층에서 다시 카드를 선택하세요.",
             GoodItemType.Shield => hideResultMessage
-                ? "저주 때문에 결과 문구는 흐렸고, 이미 방패를 보유 중이라 추가 획득은 없었습니다. 다음 층으로 이동합니다."
-                : "이미 방패를 가지고 있어서 추가로 쌓이지 않았습니다. 다음 층으로 이동합니다.",
-            _ => "알 수 없는 아이템입니다."
+                ? "저주 때문에 결과 문구는 흐렸고, 이미 방패를 보유 중이라 추가 획득은 없었습니다. 같은 층에서 다시 카드를 선택하세요."
+                : "이미 방패를 가지고 있어서 추가로 쌓이지 않았습니다. 같은 층에서 다시 카드를 선택하세요.",
+            _ => "알 수 없는 아이템입니다. 같은 층에서 다시 카드를 선택하세요."
         };
 
-        uiManager.RefreshHud(currentTowerHeight, bestTowerHeight, GetActiveFloorNumber(), playerState);
-        uiManager.SetStatusMessage(message, StatusTone.Good);
-        yield return AdvanceAfterRowSelection();
+        ContinueSelectingCurrentRow(message, StatusTone.Good);
+        yield break;
     }
 
     private IEnumerator ResolveBadItem(CardData selectedCard, CardView selectedView, bool hideResultMessage)
@@ -201,12 +200,12 @@ public sealed class GameManager : MonoBehaviour
         selectedCard.Consume();
         selectedView.SetConsumedVisual();
 
-        uiManager.SetStatusMessage(
+        ContinueSelectingCurrentRow(
             hideResultMessage
-                ? "저주 때문에 결과 문구는 흐렸지만, 빈 카드였습니다. 다음 층으로 이동합니다."
-                : "빈 카드였습니다. 다음 층으로 이동합니다.",
+                ? "저주 때문에 결과 문구는 흐렸지만, 빈 카드였습니다. 같은 층에서 다시 카드를 선택하세요."
+                : "빈 카드였습니다. 같은 층에서 다시 카드를 선택하세요.",
             StatusTone.Neutral);
-        yield return AdvanceAfterRowSelection();
+        yield break;
     }
 
     private IEnumerator AdvanceAfterRowSelection()
@@ -238,6 +237,14 @@ public sealed class GameManager : MonoBehaviour
         currentTowerHeight += 1;
         bestTowerHeight = Mathf.Max(bestTowerHeight, currentTowerHeight);
         LoadFloor(currentTowerHeight, $"{currentTowerHeight}층 타워가 생성되었습니다. 위에서 아래까지 확인한 뒤 가장 아래 행부터 시작하세요.");
+    }
+
+    private void ContinueSelectingCurrentRow(string message, StatusTone tone)
+    {
+        isResolvingCard = false;
+        uiManager.RefreshHud(currentTowerHeight, bestTowerHeight, GetActiveFloorNumber(), playerState);
+        uiManager.SetCardInteractionForRow(currentFloorCards, activeRowContentIndex, true);
+        uiManager.SetStatusMessage(message, tone);
     }
 
     private void LoadFloor(int towerHeight, string entryMessage)
