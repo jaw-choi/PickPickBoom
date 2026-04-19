@@ -186,7 +186,7 @@ public sealed class UIManager : MonoBehaviour
         boardScrollRect.verticalNormalizedPosition = 0f;
     }
 
-    public IEnumerator PlayScrollToRow(int rowContentIndex, int totalRows, float duration)
+    public IEnumerator PlayScrollToRow(int fromRowContentIndex, int toRowContentIndex, int totalRows, float duration)
     {
         if (boardScrollRect == null)
         {
@@ -196,8 +196,9 @@ public sealed class UIManager : MonoBehaviour
         RebuildBoardLayout();
         boardScrollRect.StopMovement();
 
-        float start = boardScrollRect.verticalNormalizedPosition;
-        float target = GetNormalizedPositionForRow(rowContentIndex, totalRows);
+        float start = GetNormalizedPositionForRow(fromRowContentIndex, totalRows);
+        float target = GetNormalizedPositionForRow(toRowContentIndex, totalRows);
+        boardScrollRect.verticalNormalizedPosition = start;
 
         if (duration <= 0f)
         {

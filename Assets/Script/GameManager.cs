@@ -213,10 +213,15 @@ public sealed class GameManager : MonoBehaviour
     {
         if (activeRowContentIndex > 0)
         {
+            int currentRowContentIndex = activeRowContentIndex;
             activeRowContentIndex -= 1;
             int nextFloorNumber = GetActiveFloorNumber();
 
-            yield return uiManager.PlayScrollToRow(activeRowContentIndex, currentTowerHeight, rowAdvanceScrollDuration);
+            yield return uiManager.PlayScrollToRow(
+                currentRowContentIndex,
+                activeRowContentIndex,
+                currentTowerHeight,
+                rowAdvanceScrollDuration);
 
             isResolvingCard = false;
             uiManager.RefreshHud(currentTowerHeight, bestTowerHeight, nextFloorNumber, playerState);
