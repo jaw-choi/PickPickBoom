@@ -8,14 +8,15 @@ public sealed class GameManager : MonoBehaviour
     [SerializeField] private FloorGenerator floorGenerator = null!;
     [SerializeField] private UIManager uiManager = null!;
 
-    [Header("Timing")]
-    [SerializeField, Min(0f)] private float boardPanDurationPerRow = 0.4f;
-    [SerializeField, Min(0f)] private float floorPreviewDuration = 0.8f;
-    [SerializeField, Min(0f)] private float floorPreviewFlipDuration = 0.22f;
-    [SerializeField, Min(0f)] private float rowAdvanceScrollDuration = 0.35f;
-    [SerializeField, Min(0f)] private float revealAnimationDuration = 0.18f;
-    [SerializeField, Min(0f)] private float postRevealDelay = 0.18f;
-    [SerializeField, Min(0f)] private float floorTransitionDelay = 0.45f;
+    [Header("Difficulty")]
+    [SerializeField] private GameDifficulty currentDifficulty = GameDifficulty.Normal;
+    [SerializeField] private GameDifficultyProfile easyProfile = GameDifficultyProfile.CreateEasy();
+    [SerializeField] private GameDifficultyProfile normalProfile = GameDifficultyProfile.CreateNormal();
+    [SerializeField] private GameDifficultyProfile hardProfile = GameDifficultyProfile.CreateHard();
+
+    [Header("Common Fast Timing")]
+    [SerializeField, Min(0f)] private float commonFloorPreviewFlipDuration = 0.14f;
+    [SerializeField, Min(0f)] private float commonRowAdvanceScrollDuration = 0.22f;
 
     private readonly PlayerState playerState = new();
     private List<CardData> currentFloorCards = new(3);
@@ -33,7 +34,22 @@ public sealed class GameManager : MonoBehaviour
             return;
         }
 
-        uiManager.Initialize(RestartSession);
+        uiManager.Initialize(RestartSession, StartSessionWithDifficulty, ReturnToMainMenu);
+        RefreshIntroBestScores();
+
+        if (uiManager.HasIntroPanel)
+        {
+            uiManager.ShowIntro();
+        }
+        else
+        {
+            RestartSession();
+        }
+    }
+
+    public void StartSessionWithDifficulty(GameDifficulty difficulty)
+    {
+        currentDifficulty = difficulty;
         RestartSession();
     }
 
@@ -45,10 +61,21 @@ public sealed class GameManager : MonoBehaviour
 
         playerState.ResetSession();
         currentTowerHeight = 1;
-        bestTowerHeight = 1;
+        bestTowerHeight = Mathf.Max(1, GetSavedBestScore(currentDifficulty));
 
+        uiManager.HideIntro();
         uiManager.HideGameOver();
         LoadFloor(currentTowerHeight, "1층부터 시작합니다. 위에서 아래까지 보드를 확인한 뒤 가장 아래 행의 카드 하나를 고르세요.");
+    }
+
+    public void ReturnToMainMenu()
+    {
+        StopAllCoroutines();
+        isResolvingCard = false;
+        isGameOver = false;
+        RefreshIntroBestScores();
+        uiManager.ShowIntro();
+        uiManager.SetStatusMessage("난이도를 선택하세요.", StatusTone.Neutral);
     }
 
     private void HandleCardSelected(int cardIndex)
@@ -86,20 +113,24 @@ public sealed class GameManager : MonoBehaviour
         CardData selectedCard = currentFloorCards[cardIndex];
         CardView selectedView = uiManager.GetCardView(cardIndex);
 
-        // Curse hides only the next result message, then clears itself.
-        bool hideResultMessage = playerState.ConsumeCurse();
+        bool hideResultMessage = false;
 
-        yield return selectedView.PlayRevealAnimation(revealAnimationDuration);
+        GameDifficultyProfile difficultyProfile = GetCurrentDifficultyProfile();
 
-        if (postRevealDelay > 0f)
+        yield return selectedView.PlayRevealAnimation(difficultyProfile.revealAnimationDuration);
+
+        if (difficultyProfile.postRevealDelay > 0f)
         {
-            yield return new WaitForSeconds(postRevealDelay);
+            yield return new WaitForSeconds(difficultyProfile.postRevealDelay);
         }
 
         switch (selectedCard.Type)
         {
             case CardType.Stair:
                 yield return ResolveStair(selectedCard, selectedView, hideResultMessage);
+                yield break;
+            case CardType.Chest:
+                yield return ResolveChest(selectedCard, selectedView, hideResultMessage);
                 yield break;
             case CardType.Monster:
                 yield return ResolveMonster(selectedCard, selectedView, hideResultMessage);
@@ -130,6 +161,20 @@ public sealed class GameManager : MonoBehaviour
         yield return AdvanceAfterRowSelection();
     }
 
+    private IEnumerator ResolveChest(CardData selectedCard, CardView selectedView, bool hideResultMessage)
+    {
+        selectedCard.Consume();
+        selectedView.SetConsumedVisual();
+
+        uiManager.SetStatusMessage(
+            hideResultMessage
+                ? "저주 때문에 결과 문구는 흐렸지만, 보물 상자를 열어 스테이지를 통과합니다."
+                : "보물 상자를 열었습니다. 스테이지를 통과합니다.",
+            StatusTone.Good);
+
+        yield return AdvanceAfterRowSelection();
+    }
+
     private IEnumerator ResolveMonster(CardData selectedCard, CardView selectedView, bool hideResultMessage)
     {
         selectedCard.Consume();
@@ -144,6 +189,12 @@ public sealed class GameManager : MonoBehaviour
                 StatusTone.Warning);
 
             uiManager.RefreshHud(currentTowerHeight, bestTowerHeight, GetActiveFloorNumber(), playerState);
+            if (IsActiveRowTopRow())
+            {
+                ContinueSelectingCurrentRow("방패로 몬스터를 막았습니다. 보물 상자를 찾아야 스테이지를 통과합니다.", StatusTone.Warning);
+                yield break;
+            }
+
             yield return AdvanceAfterRowSelection();
             yield break;
         }
@@ -156,6 +207,9 @@ public sealed class GameManager : MonoBehaviour
                 ? "저주 때문에 결과 문구를 읽지 못한 채 몬스터에게 쓰러졌습니다."
                 : "몬스터 카드였습니다. 게임 오버입니다.",
             StatusTone.Bad);
+        bestTowerHeight = Mathf.Max(bestTowerHeight, currentTowerHeight);
+        SaveBestScoreIfNeeded(currentDifficulty, bestTowerHeight);
+        RefreshIntroBestScores();
         uiManager.SetAllCardInteraction(currentFloorCards, false);
         uiManager.ShowGameOver(currentTowerHeight, bestTowerHeight);
     }
@@ -184,15 +238,8 @@ public sealed class GameManager : MonoBehaviour
     {
         selectedCard.Consume();
         selectedView.SetConsumedVisual();
-        playerState.ApplyCurse();
 
-        uiManager.RefreshHud(currentTowerHeight, bestTowerHeight, GetActiveFloorNumber(), playerState);
-        uiManager.SetStatusMessage(
-            hideResultMessage
-                ? "이전 저주 때문에 결과 문구는 흐렸고, 새로운 저주를 받은 채 다음 층으로 이동합니다."
-                : "저주에 걸렸습니다. 다음 층으로 이동합니다.",
-            StatusTone.Warning);
-        yield return AdvanceAfterRowSelection();
+        yield return RewindAfterCurse();
     }
 
     private IEnumerator ResolveEmpty(CardData selectedCard, CardView selectedView, bool hideResultMessage)
@@ -220,7 +267,7 @@ public sealed class GameManager : MonoBehaviour
                 currentRowContentIndex,
                 activeRowContentIndex,
                 currentTowerHeight,
-                rowAdvanceScrollDuration);
+                commonRowAdvanceScrollDuration);
 
             isResolvingCard = false;
             uiManager.RefreshHud(currentTowerHeight, bestTowerHeight, nextFloorNumber, playerState);
@@ -229,6 +276,7 @@ public sealed class GameManager : MonoBehaviour
             yield break;
         }
 
+        float floorTransitionDelay = GetCurrentDifficultyProfile().floorTransitionDelay;
         if (floorTransitionDelay > 0f)
         {
             yield return new WaitForSeconds(floorTransitionDelay);
@@ -236,7 +284,58 @@ public sealed class GameManager : MonoBehaviour
 
         currentTowerHeight += 1;
         bestTowerHeight = Mathf.Max(bestTowerHeight, currentTowerHeight);
+        SaveBestScoreIfNeeded(currentDifficulty, bestTowerHeight);
+        RefreshIntroBestScores();
         LoadFloor(currentTowerHeight, $"{currentTowerHeight}층 타워가 생성되었습니다. 위에서 아래까지 확인한 뒤 가장 아래 행부터 시작하세요.");
+    }
+
+    private IEnumerator RewindAfterCurse()
+    {
+        int fromRowContentIndex = activeRowContentIndex;
+        int targetRowContentIndex = Mathf.Min(currentTowerHeight - 1, activeRowContentIndex + 2);
+
+        ResetRowsForRetry(fromRowContentIndex, targetRowContentIndex);
+        activeRowContentIndex = targetRowContentIndex;
+
+        if (fromRowContentIndex != targetRowContentIndex)
+        {
+            yield return uiManager.PlayScrollToRow(
+                fromRowContentIndex,
+                targetRowContentIndex,
+                currentTowerHeight,
+                commonRowAdvanceScrollDuration);
+        }
+        else
+        {
+            uiManager.JumpToRow(activeRowContentIndex, currentTowerHeight);
+        }
+
+        isResolvingCard = false;
+        uiManager.RefreshHud(currentTowerHeight, bestTowerHeight, GetActiveFloorNumber(), playerState);
+        uiManager.SetCardInteractionForRow(currentFloorCards, activeRowContentIndex, true);
+        uiManager.SetStatusMessage("저주에 걸렸습니다. 2칸 전으로 돌아가고 카드가 다시 뒤집혔습니다. 이 행의 카드 하나를 선택하세요.", StatusTone.Warning);
+    }
+
+    private void ResetRowsForRetry(int fromRowContentIndex, int targetRowContentIndex)
+    {
+        int firstRow = Mathf.Min(fromRowContentIndex, targetRowContentIndex);
+        int lastRow = Mathf.Max(fromRowContentIndex, targetRowContentIndex);
+
+        for (int rowIndex = firstRow; rowIndex <= lastRow; rowIndex++)
+        {
+            int rowStartIndex = rowIndex * 3;
+            for (int offset = 0; offset < 3; offset++)
+            {
+                int cardIndex = rowStartIndex + offset;
+                if (cardIndex >= currentFloorCards.Count)
+                {
+                    break;
+                }
+
+                currentFloorCards[cardIndex].ResetConsumed();
+                uiManager.GetCardView(cardIndex).ShowFaceDownImmediate();
+            }
+        }
     }
 
     private void ContinueSelectingCurrentRow(string message, StatusTone tone)
@@ -251,7 +350,7 @@ public sealed class GameManager : MonoBehaviour
     {
         currentTowerHeight = towerHeight;
         bestTowerHeight = Mathf.Max(bestTowerHeight, currentTowerHeight);
-        currentFloorCards = floorGenerator.GenerateFloor(currentTowerHeight);
+        currentFloorCards = floorGenerator.GenerateFloor(currentTowerHeight, GetCurrentDifficultyProfile());
         activeRowContentIndex = currentTowerHeight - 1;
 
         uiManager.BindFloorCards(currentFloorCards, HandleCardSelected);
@@ -271,21 +370,23 @@ public sealed class GameManager : MonoBehaviour
             uiManager.GetCardView(i).ShowRevealedImmediate();
         }
 
-        yield return uiManager.PlayBoardPreviewPan(currentTowerHeight, boardPanDurationPerRow);
+        GameDifficultyProfile difficultyProfile = GetCurrentDifficultyProfile();
 
-        if (floorPreviewDuration > 0f)
+        yield return uiManager.PlayBoardPreviewPan(currentTowerHeight, difficultyProfile.boardPanDurationPerRow);
+
+        if (difficultyProfile.floorPreviewDuration > 0f)
         {
-            yield return new WaitForSeconds(floorPreviewDuration);
+            yield return new WaitForSeconds(difficultyProfile.floorPreviewDuration);
         }
 
-        if (floorPreviewFlipDuration > 0f)
+        if (commonFloorPreviewFlipDuration > 0f)
         {
             for (int i = 0; i < uiManager.ActiveCardCount; i++)
             {
-                StartCoroutine(uiManager.GetCardView(i).PlayFlipToFaceDownAnimation(floorPreviewFlipDuration));
+                StartCoroutine(uiManager.GetCardView(i).PlayFlipToFaceDownAnimation(commonFloorPreviewFlipDuration));
             }
 
-            yield return new WaitForSeconds(floorPreviewFlipDuration);
+            yield return new WaitForSeconds(commonFloorPreviewFlipDuration);
         }
         else
         {
@@ -305,6 +406,51 @@ public sealed class GameManager : MonoBehaviour
     private int GetActiveFloorNumber()
     {
         return currentTowerHeight - activeRowContentIndex;
+    }
+
+    private bool IsActiveRowTopRow()
+    {
+        return activeRowContentIndex == 0;
+    }
+
+    private GameDifficultyProfile GetCurrentDifficultyProfile()
+    {
+        return currentDifficulty switch
+        {
+            GameDifficulty.Easy => easyProfile ?? GameDifficultyProfile.CreateEasy(),
+            GameDifficulty.Hard => hardProfile ?? GameDifficultyProfile.CreateHard(),
+            _ => normalProfile ?? GameDifficultyProfile.CreateNormal()
+        };
+    }
+
+    private void RefreshIntroBestScores()
+    {
+        uiManager.SetIntroBestScores(
+            GetSavedBestScore(GameDifficulty.Easy),
+            GetSavedBestScore(GameDifficulty.Normal),
+            GetSavedBestScore(GameDifficulty.Hard));
+    }
+
+    private static int GetSavedBestScore(GameDifficulty difficulty)
+    {
+        return PlayerPrefs.GetInt(GetBestScoreKey(difficulty), 0);
+    }
+
+    private static void SaveBestScoreIfNeeded(GameDifficulty difficulty, int score)
+    {
+        string key = GetBestScoreKey(difficulty);
+        if (score <= PlayerPrefs.GetInt(key, 0))
+        {
+            return;
+        }
+
+        PlayerPrefs.SetInt(key, score);
+        PlayerPrefs.Save();
+    }
+
+    private static string GetBestScoreKey(GameDifficulty difficulty)
+    {
+        return $"PickPickTower.BestScore.{difficulty}";
     }
 
     private bool IsIndexInActiveRow(int cardIndex)

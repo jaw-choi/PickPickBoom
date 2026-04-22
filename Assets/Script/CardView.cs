@@ -16,6 +16,7 @@ public sealed class CardView : MonoBehaviour
     [Header("Card Sprites")]
     [SerializeField] private Sprite faceDownSprite = null!;
     [SerializeField] private Sprite stairSprite = null!;
+    [SerializeField] private Sprite chestSprite;
     [SerializeField] private Sprite monsterSprite = null!;
     [SerializeField] private Sprite shieldSprite = null!;
     [SerializeField] private Sprite curseSprite = null!;
@@ -176,6 +177,8 @@ public sealed class CardView : MonoBehaviour
         {
             case CardType.Stair:
                 return stairSprite;
+            case CardType.Chest:
+                return chestSprite != null ? chestSprite : stairSprite;
             case CardType.Monster:
                 return monsterSprite;
             case CardType.GoodItem:

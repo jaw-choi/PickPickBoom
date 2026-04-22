@@ -6,25 +6,23 @@ public sealed class GameManagerEditor : Editor
 {
     private SerializedProperty floorGeneratorProperty = null!;
     private SerializedProperty uiManagerProperty = null!;
-    private SerializedProperty boardPanDurationPerRowProperty = null!;
-    private SerializedProperty floorPreviewDurationProperty = null!;
-    private SerializedProperty floorPreviewFlipDurationProperty = null!;
-    private SerializedProperty rowAdvanceScrollDurationProperty = null!;
-    private SerializedProperty revealAnimationDurationProperty = null!;
-    private SerializedProperty postRevealDelayProperty = null!;
-    private SerializedProperty floorTransitionDelayProperty = null!;
+    private SerializedProperty currentDifficultyProperty = null!;
+    private SerializedProperty easyProfileProperty = null!;
+    private SerializedProperty normalProfileProperty = null!;
+    private SerializedProperty hardProfileProperty = null!;
+    private SerializedProperty commonFloorPreviewFlipDurationProperty = null!;
+    private SerializedProperty commonRowAdvanceScrollDurationProperty = null!;
 
     private void OnEnable()
     {
         floorGeneratorProperty = serializedObject.FindProperty("floorGenerator");
         uiManagerProperty = serializedObject.FindProperty("uiManager");
-        boardPanDurationPerRowProperty = serializedObject.FindProperty("boardPanDurationPerRow");
-        floorPreviewDurationProperty = serializedObject.FindProperty("floorPreviewDuration");
-        floorPreviewFlipDurationProperty = serializedObject.FindProperty("floorPreviewFlipDuration");
-        rowAdvanceScrollDurationProperty = serializedObject.FindProperty("rowAdvanceScrollDuration");
-        revealAnimationDurationProperty = serializedObject.FindProperty("revealAnimationDuration");
-        postRevealDelayProperty = serializedObject.FindProperty("postRevealDelay");
-        floorTransitionDelayProperty = serializedObject.FindProperty("floorTransitionDelay");
+        currentDifficultyProperty = serializedObject.FindProperty("currentDifficulty");
+        easyProfileProperty = serializedObject.FindProperty("easyProfile");
+        normalProfileProperty = serializedObject.FindProperty("normalProfile");
+        hardProfileProperty = serializedObject.FindProperty("hardProfile");
+        commonFloorPreviewFlipDurationProperty = serializedObject.FindProperty("commonFloorPreviewFlipDuration");
+        commonRowAdvanceScrollDurationProperty = serializedObject.FindProperty("commonRowAdvanceScrollDuration");
     }
 
     public override void OnInspectorGUI()
@@ -34,40 +32,21 @@ public sealed class GameManagerEditor : Editor
         DrawReferencesSection();
 
         EditorGUILayout.Space(12f);
-        EditorGUILayout.LabelField("디자이너 타이밍 패널", EditorStyles.boldLabel);
-        EditorGUILayout.HelpBox("카메라 이동, 카드 공개, 뒤집기, 층 전환 시간을 여기서 바로 조절할 수 있습니다.", MessageType.Info);
+        EditorGUILayout.LabelField("난이도 설정", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(currentDifficultyProperty, new GUIContent("현재 난이도"));
+        EditorGUILayout.HelpBox(
+            "난이도별로 카드 공개 속도와 랜덤 카드 확률을 따로 조절합니다. Easy는 느리고 좋은 아이템이 많고, Hard는 빠르고 좋은 아이템이 적습니다.",
+            MessageType.Info);
 
         DrawPresetButtons();
         EditorGUILayout.Space(8f);
 
-        DrawTimingSection("보드 이동", "값이 클수록 느려집니다.", () =>
-        {
-            DrawSlider(boardPanDurationPerRowProperty, "카메라 내려오는 시간(행당)", 0f, 2f);
-            DrawSlider(rowAdvanceScrollDurationProperty, "다음 행 자동 스크롤 시간", 0f, 2f);
-        });
-
-        DrawTimingSection("카드 프리뷰", "라운드 시작 시 카드들을 보여주는 연출입니다.", () =>
-        {
-            DrawSlider(floorPreviewDurationProperty, "카드 공개 유지 시간", 0f, 3f);
-            DrawSlider(floorPreviewFlipDurationProperty, "카드 뒤집기 시간", 0f, 1.5f);
-        });
-
-        DrawTimingSection("선택 연출", "카드 선택 직후 공개되고 다음 단계로 넘어가기 전까지의 시간입니다.", () =>
-        {
-            DrawSlider(revealAnimationDurationProperty, "선택 카드 공개 시간", 0f, 1.5f);
-            DrawSlider(postRevealDelayProperty, "선택 후 대기 시간", 0f, 1.5f);
-        });
-
-        DrawTimingSection("층 전환", "한 층을 끝내고 다음 층을 만들기 전 대기 시간입니다.", () =>
-        {
-            DrawSlider(floorTransitionDelayProperty, "새 층 전환 대기 시간", 0f, 2f);
-        });
-
+        DrawCommonFastTiming();
         EditorGUILayout.Space(8f);
-        EditorGUILayout.HelpBox(
-            $"시작 프리뷰 체감 시간: {floorPreviewDurationProperty.floatValue + floorPreviewFlipDurationProperty.floatValue:0.00}초\n" +
-            $"카드 선택 후 다음 행 이동 전 체감 시간: {revealAnimationDurationProperty.floatValue + postRevealDelayProperty.floatValue:0.00}초",
-            MessageType.None);
+
+        DrawDifficultyProfile("Easy", easyProfileProperty);
+        DrawDifficultyProfile("Normal", normalProfileProperty);
+        DrawDifficultyProfile("Hard", hardProfileProperty);
 
         serializedObject.ApplyModifiedProperties();
     }
@@ -81,57 +60,113 @@ public sealed class GameManagerEditor : Editor
 
     private void DrawPresetButtons()
     {
-        EditorGUILayout.LabelField("빠른 프리셋", EditorStyles.miniBoldLabel);
+        EditorGUILayout.LabelField("빠른 기본값", EditorStyles.miniBoldLabel);
 
         using (new EditorGUILayout.HorizontalScope())
         {
-            if (GUILayout.Button("빠름"))
+            if (GUILayout.Button("Easy 기본값"))
             {
-                ApplyPreset(0.22f, 0.35f, 0.12f, 0.18f, 0.12f, 0.08f, 0.2f);
+                ApplyProfile(easyProfileProperty, GameDifficultyProfile.CreateEasy());
             }
 
-            if (GUILayout.Button("기본"))
+            if (GUILayout.Button("Normal 기본값"))
             {
-                ApplyPreset(0.4f, 0.8f, 0.22f, 0.35f, 0.18f, 0.18f, 0.45f);
+                ApplyProfile(normalProfileProperty, GameDifficultyProfile.CreateNormal());
             }
 
-            if (GUILayout.Button("느림"))
+            if (GUILayout.Button("Hard 기본값"))
             {
-                ApplyPreset(0.7f, 1.2f, 0.35f, 0.55f, 0.3f, 0.3f, 0.65f);
+                ApplyProfile(hardProfileProperty, GameDifficultyProfile.CreateHard());
             }
         }
     }
 
-    private void DrawTimingSection(string title, string description, System.Action drawFields)
+    private void DrawDifficultyProfile(string title, SerializedProperty profileProperty)
     {
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.LabelField(title, EditorStyles.boldLabel);
-        EditorGUILayout.LabelField(description, EditorStyles.wordWrappedMiniLabel);
-        EditorGUILayout.Space(4f);
-        drawFields.Invoke();
+
+        DrawTimingSection(profileProperty);
+        EditorGUILayout.Space(6f);
+        DrawWeightSection(profileProperty);
+        DrawProfileSummary(profileProperty);
+
         EditorGUILayout.EndVertical();
     }
 
-    private static void DrawSlider(SerializedProperty property, string label, float min, float max)
+    private void DrawCommonFastTiming()
     {
+        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.LabelField("공통 빠른 시간", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("세 가지 난이도 모두 같은 값을 사용합니다.", EditorStyles.wordWrappedMiniLabel);
+        EditorGUILayout.Slider(commonFloorPreviewFlipDurationProperty, 0f, 1.5f, new GUIContent("카드 뒤집기 시간", "초 단위"));
+        EditorGUILayout.Slider(commonRowAdvanceScrollDurationProperty, 0f, 2f, new GUIContent("다음 행 자동 스크롤 시간", "초 단위"));
+        EditorGUILayout.EndVertical();
+    }
+
+    private static void DrawTimingSection(SerializedProperty profileProperty)
+    {
+        EditorGUILayout.LabelField("카드 표시/연출 시간", EditorStyles.miniBoldLabel);
+        DrawSlider(profileProperty, "boardPanDurationPerRow", "카메라 내려오는 시간(행당)", 0f, 2f);
+        DrawSlider(profileProperty, "floorPreviewDuration", "카드 공개 유지 시간", 0f, 3f);
+        DrawSlider(profileProperty, "revealAnimationDuration", "선택 카드 공개 시간", 0f, 1.5f);
+        DrawSlider(profileProperty, "postRevealDelay", "선택 후 대기 시간", 0f, 1.5f);
+        DrawSlider(profileProperty, "floorTransitionDelay", "새 층 전환 대기 시간", 0f, 2f);
+    }
+
+    private static void DrawWeightSection(SerializedProperty profileProperty)
+    {
+        EditorGUILayout.LabelField("랜덤 카드 등장 확률", EditorStyles.miniBoldLabel);
+        DrawIntSlider(profileProperty, "emptyWeight", "빈 카드 가중치", 0, 100);
+        DrawIntSlider(profileProperty, "curseWeight", "저주 카드 가중치", 0, 100);
+        DrawIntSlider(profileProperty, "goodItemWeight", "좋은 아이템 가중치", 0, 100);
+    }
+
+    private static void DrawProfileSummary(SerializedProperty profileProperty)
+    {
+        SerializedProperty emptyWeight = profileProperty.FindPropertyRelative("emptyWeight");
+        SerializedProperty curseWeight = profileProperty.FindPropertyRelative("curseWeight");
+        SerializedProperty goodItemWeight = profileProperty.FindPropertyRelative("goodItemWeight");
+        int totalWeight = Mathf.Max(0, emptyWeight.intValue) +
+            Mathf.Max(0, curseWeight.intValue) +
+            Mathf.Max(0, goodItemWeight.intValue);
+
+        if (totalWeight <= 0)
+        {
+            EditorGUILayout.HelpBox("모든 가중치가 0이면 빈 카드가 기본으로 선택됩니다.", MessageType.Warning);
+            return;
+        }
+
+        float emptyPercent = emptyWeight.intValue / (float)totalWeight * 100f;
+        float cursePercent = curseWeight.intValue / (float)totalWeight * 100f;
+        float goodItemPercent = goodItemWeight.intValue / (float)totalWeight * 100f;
+
+        EditorGUILayout.HelpBox(
+            $"현재 확률: 빈 카드 {emptyPercent:0.#}% / 저주 {cursePercent:0.#}% / 좋은 아이템 {goodItemPercent:0.#}%",
+            MessageType.None);
+    }
+
+    private static void DrawSlider(SerializedProperty profileProperty, string propertyName, string label, float min, float max)
+    {
+        SerializedProperty property = profileProperty.FindPropertyRelative(propertyName);
         EditorGUILayout.Slider(property, min, max, new GUIContent(label, "초 단위"));
     }
 
-    private void ApplyPreset(
-        float boardPanDurationPerRow,
-        float floorPreviewDuration,
-        float floorPreviewFlipDuration,
-        float rowAdvanceScrollDuration,
-        float revealAnimationDuration,
-        float postRevealDelay,
-        float floorTransitionDelay)
+    private static void DrawIntSlider(SerializedProperty profileProperty, string propertyName, string label, int min, int max)
     {
-        boardPanDurationPerRowProperty.floatValue = boardPanDurationPerRow;
-        floorPreviewDurationProperty.floatValue = floorPreviewDuration;
-        floorPreviewFlipDurationProperty.floatValue = floorPreviewFlipDuration;
-        rowAdvanceScrollDurationProperty.floatValue = rowAdvanceScrollDuration;
-        revealAnimationDurationProperty.floatValue = revealAnimationDuration;
-        postRevealDelayProperty.floatValue = postRevealDelay;
-        floorTransitionDelayProperty.floatValue = floorTransitionDelay;
+        SerializedProperty property = profileProperty.FindPropertyRelative(propertyName);
+        EditorGUILayout.IntSlider(property, min, max, new GUIContent(label));
+    }
+
+    private static void ApplyProfile(SerializedProperty targetProperty, GameDifficultyProfile source)
+    {
+        targetProperty.FindPropertyRelative("boardPanDurationPerRow").floatValue = source.boardPanDurationPerRow;
+        targetProperty.FindPropertyRelative("floorPreviewDuration").floatValue = source.floorPreviewDuration;
+        targetProperty.FindPropertyRelative("revealAnimationDuration").floatValue = source.revealAnimationDuration;
+        targetProperty.FindPropertyRelative("postRevealDelay").floatValue = source.postRevealDelay;
+        targetProperty.FindPropertyRelative("floorTransitionDelay").floatValue = source.floorTransitionDelay;
+        targetProperty.FindPropertyRelative("emptyWeight").intValue = source.emptyWeight;
+        targetProperty.FindPropertyRelative("curseWeight").intValue = source.curseWeight;
+        targetProperty.FindPropertyRelative("goodItemWeight").intValue = source.goodItemWeight;
     }
 }

@@ -19,10 +19,20 @@ public sealed class UIManager : MonoBehaviour
     [SerializeField] private RectTransform cardContentRoot = null!;
     [SerializeField] private CardView cardViewPrefab = null!;
 
+    [Header("Intro")]
+    [SerializeField] private GameObject introPanel;
+    [SerializeField] private Button easyButton;
+    [SerializeField] private Button normalButton;
+    [SerializeField] private Button hardButton;
+    [SerializeField] private TMP_Text easyBestScoreText;
+    [SerializeField] private TMP_Text normalBestScoreText;
+    [SerializeField] private TMP_Text hardBestScoreText;
+
     [Header("Game Over")]
     [SerializeField] private GameObject gameOverPanel = null!;
     [SerializeField] private TMP_Text gameOverText = null!;
     [SerializeField] private Button restartButton = null!;
+    [SerializeField] private Button mainMenuButton = null!;
 
     [Header("Status Colors")]
     [SerializeField] private Color neutralColor = new(0.95f, 0.95f, 0.95f, 1f);
@@ -32,6 +42,8 @@ public sealed class UIManager : MonoBehaviour
 
     private readonly List<CardView> cardViews = new();
     private Action restartRequested;
+    private Action mainMenuRequested;
+    private Action<GameDifficulty> difficultySelected;
     private int activeCardCount;
     private bool hasCachedBaseGridPadding;
     private int baseGridPaddingTop;
@@ -41,9 +53,32 @@ public sealed class UIManager : MonoBehaviour
 
     private void Awake()
     {
+        CreateDefaultIntroPanelIfNeeded();
+        CreateDefaultGameOverButtonsIfNeeded();
+
         if (restartButton != null)
         {
             restartButton.onClick.AddListener(HandleRestartClicked);
+        }
+
+        if (mainMenuButton != null)
+        {
+            mainMenuButton.onClick.AddListener(HandleMainMenuClicked);
+        }
+
+        if (easyButton != null)
+        {
+            easyButton.onClick.AddListener(HandleEasyClicked);
+        }
+
+        if (normalButton != null)
+        {
+            normalButton.onClick.AddListener(HandleNormalClicked);
+        }
+
+        if (hardButton != null)
+        {
+            hardButton.onClick.AddListener(HandleHardClicked);
         }
 
         if (gameOverPanel != null)
@@ -58,11 +93,69 @@ public sealed class UIManager : MonoBehaviour
         {
             restartButton.onClick.RemoveListener(HandleRestartClicked);
         }
+
+        if (mainMenuButton != null)
+        {
+            mainMenuButton.onClick.RemoveListener(HandleMainMenuClicked);
+        }
+
+        if (easyButton != null)
+        {
+            easyButton.onClick.RemoveListener(HandleEasyClicked);
+        }
+
+        if (normalButton != null)
+        {
+            normalButton.onClick.RemoveListener(HandleNormalClicked);
+        }
+
+        if (hardButton != null)
+        {
+            hardButton.onClick.RemoveListener(HandleHardClicked);
+        }
     }
 
-    public void Initialize(Action restartCallback)
+    public bool HasIntroPanel => introPanel != null;
+
+    public void Initialize(
+        Action restartCallback,
+        Action<GameDifficulty> difficultySelectedCallback,
+        Action mainMenuCallback)
     {
         restartRequested = restartCallback;
+        difficultySelected = difficultySelectedCallback;
+        mainMenuRequested = mainMenuCallback;
+    }
+
+    public void ShowIntro()
+    {
+        if (introPanel != null)
+        {
+            introPanel.SetActive(true);
+        }
+
+        if (gameOverPanel != null)
+        {
+            HideGameOver();
+        }
+
+        SetAllActiveCards(false);
+        SetBoardNavigationEnabled(false);
+    }
+
+    public void HideIntro()
+    {
+        if (introPanel != null)
+        {
+            introPanel.SetActive(false);
+        }
+    }
+
+    public void SetIntroBestScores(int easyBestScore, int normalBestScore, int hardBestScore)
+    {
+        SetBestScoreText(easyBestScoreText, easyBestScore);
+        SetBestScoreText(normalBestScoreText, normalBestScore);
+        SetBestScoreText(hardBestScoreText, hardBestScore);
     }
 
     public void BindFloorCards(IReadOnlyList<CardData> cards, Action<int> selectedCallback)
@@ -95,7 +188,7 @@ public sealed class UIManager : MonoBehaviour
         currentFloorText.text = $"현재 층: {activeFloorNumber} / {currentTowerHeight}";
         bestFloorText.text = $"최고 타워 높이: {bestTowerHeight}";
         shieldStatusText.text = playerState.HasShield ? "방패: 보유 중" : "방패: 없음";
-        curseStatusText.text = playerState.HideNextResultMessage ? "저주: 다음 결과 숨김" : "저주: 없음";
+        curseStatusText.text = "저주: 뽑으면 2칸 뒤로";
     }
 
     public void SetAllCardInteraction(IReadOnlyList<CardData> cards, bool interactable)
@@ -247,9 +340,22 @@ public sealed class UIManager : MonoBehaviour
             cardContentRoot != null &&
             cardViewPrefab != null &&
             cardViewPrefab.HasValidReferences() &&
+            HasValidIntroReferences() &&
             gameOverPanel != null &&
             gameOverText != null &&
-            restartButton != null;
+            restartButton != null &&
+            mainMenuButton != null;
+    }
+
+    private bool HasValidIntroReferences()
+    {
+        return introPanel == null ||
+            easyButton != null &&
+            normalButton != null &&
+            hardButton != null &&
+            easyBestScoreText != null &&
+            normalBestScoreText != null &&
+            hardBestScoreText != null;
     }
 
     private void EnsureCardPoolSize(int requiredCount)
@@ -439,6 +545,179 @@ public sealed class UIManager : MonoBehaviour
     private void HandleRestartClicked()
     {
         restartRequested?.Invoke();
+    }
+
+    private void HandleMainMenuClicked()
+    {
+        mainMenuRequested?.Invoke();
+    }
+
+    private void HandleEasyClicked()
+    {
+        difficultySelected?.Invoke(GameDifficulty.Easy);
+    }
+
+    private void HandleNormalClicked()
+    {
+        difficultySelected?.Invoke(GameDifficulty.Normal);
+    }
+
+    private void HandleHardClicked()
+    {
+        difficultySelected?.Invoke(GameDifficulty.Hard);
+    }
+
+    private void SetAllActiveCards(bool active)
+    {
+        for (int i = 0; i < cardViews.Count; i++)
+        {
+            cardViews[i].gameObject.SetActive(active);
+        }
+
+        if (!active)
+        {
+            activeCardCount = 0;
+        }
+    }
+
+    private static void SetBestScoreText(TMP_Text targetText, int bestScore)
+    {
+        if (targetText != null)
+        {
+            targetText.text = $"BEST {bestScore}";
+        }
+    }
+
+    private void CreateDefaultIntroPanelIfNeeded()
+    {
+        if (introPanel != null || boardScrollRect == null)
+        {
+            return;
+        }
+
+        Canvas canvas = boardScrollRect.GetComponentInParent<Canvas>();
+        if (canvas == null)
+        {
+            return;
+        }
+
+        introPanel = new GameObject("IntroPanel", typeof(RectTransform), typeof(Image));
+        introPanel.transform.SetParent(canvas.transform, false);
+
+        RectTransform panelRect = introPanel.GetComponent<RectTransform>();
+        panelRect.anchorMin = Vector2.zero;
+        panelRect.anchorMax = Vector2.one;
+        panelRect.offsetMin = Vector2.zero;
+        panelRect.offsetMax = Vector2.zero;
+
+        Image panelImage = introPanel.GetComponent<Image>();
+        panelImage.color = new Color(0.05f, 0.07f, 0.09f, 0.92f);
+
+        CreateIntroText("Pick Pick Tower", new Vector2(0f, 210f), 42f, FontStyles.Bold);
+        CreateIntroText("난이도를 선택하세요", new Vector2(0f, 150f), 24f, FontStyles.Normal);
+
+        easyButton = CreateDifficultyButton("EasyButton", "EASY", new Vector2(0f, 60f), out easyBestScoreText);
+        normalButton = CreateDifficultyButton("NormalButton", "NORMAL", new Vector2(0f, -45f), out normalBestScoreText);
+        hardButton = CreateDifficultyButton("HardButton", "HARD", new Vector2(0f, -150f), out hardBestScoreText);
+    }
+
+    private void CreateDefaultGameOverButtonsIfNeeded()
+    {
+        if (gameOverPanel == null || restartButton == null || mainMenuButton != null)
+        {
+            return;
+        }
+
+        RectTransform restartRect = restartButton.transform as RectTransform;
+        if (restartRect != null)
+        {
+            restartRect.anchoredPosition = new Vector2(-90f, restartRect.anchoredPosition.y);
+            restartRect.sizeDelta = new Vector2(160f, restartRect.sizeDelta.y);
+        }
+
+        mainMenuButton = CreateGameOverButton("MainMenuButton", "MainMenu", new Vector2(90f, restartRect != null ? restartRect.anchoredPosition.y : -120f));
+    }
+
+    private Button CreateGameOverButton(string objectName, string label, Vector2 anchoredPosition)
+    {
+        GameObject buttonObject = new GameObject(objectName, typeof(RectTransform), typeof(Image), typeof(Button));
+        buttonObject.transform.SetParent(gameOverPanel.transform, false);
+
+        RectTransform buttonRect = buttonObject.GetComponent<RectTransform>();
+        buttonRect.anchorMin = new Vector2(0.5f, 0.5f);
+        buttonRect.anchorMax = new Vector2(0.5f, 0.5f);
+        buttonRect.sizeDelta = new Vector2(160f, 52f);
+        buttonRect.anchoredPosition = anchoredPosition;
+
+        Image buttonImage = buttonObject.GetComponent<Image>();
+        buttonImage.color = new Color(0.92f, 0.78f, 0.45f, 1f);
+
+        Button button = buttonObject.GetComponent<Button>();
+        TMP_Text labelText = CreateChildText(buttonObject.transform, $"{label}Label", label, Vector2.zero, 24f, FontStyles.Bold);
+        labelText.color = new Color(0.12f, 0.09f, 0.05f, 1f);
+        return button;
+    }
+
+    private TMP_Text CreateIntroText(string text, Vector2 anchoredPosition, float fontSize, FontStyles fontStyle)
+    {
+        GameObject textObject = new GameObject(text, typeof(RectTransform), typeof(TextMeshProUGUI));
+        textObject.transform.SetParent(introPanel.transform, false);
+
+        RectTransform textRect = textObject.GetComponent<RectTransform>();
+        textRect.anchorMin = new Vector2(0.5f, 0.5f);
+        textRect.anchorMax = new Vector2(0.5f, 0.5f);
+        textRect.sizeDelta = new Vector2(520f, 64f);
+        textRect.anchoredPosition = anchoredPosition;
+
+        TMP_Text textComponent = textObject.GetComponent<TMP_Text>();
+        textComponent.text = text;
+        textComponent.fontSize = fontSize;
+        textComponent.fontStyle = fontStyle;
+        textComponent.alignment = TextAlignmentOptions.Center;
+        textComponent.color = Color.white;
+        return textComponent;
+    }
+
+    private Button CreateDifficultyButton(string objectName, string label, Vector2 anchoredPosition, out TMP_Text bestScoreText)
+    {
+        GameObject buttonObject = new GameObject(objectName, typeof(RectTransform), typeof(Image), typeof(Button));
+        buttonObject.transform.SetParent(introPanel.transform, false);
+
+        RectTransform buttonRect = buttonObject.GetComponent<RectTransform>();
+        buttonRect.anchorMin = new Vector2(0.5f, 0.5f);
+        buttonRect.anchorMax = new Vector2(0.5f, 0.5f);
+        buttonRect.sizeDelta = new Vector2(330f, 82f);
+        buttonRect.anchoredPosition = anchoredPosition;
+
+        Image buttonImage = buttonObject.GetComponent<Image>();
+        buttonImage.color = new Color(0.92f, 0.78f, 0.45f, 1f);
+
+        Button button = buttonObject.GetComponent<Button>();
+        TMP_Text labelText = CreateChildText(buttonObject.transform, $"{label}Label", label, new Vector2(0f, -8f), 34f, FontStyles.Bold);
+        labelText.color = new Color(0.12f, 0.09f, 0.05f, 1f);
+
+        bestScoreText = CreateChildText(buttonObject.transform, $"{label}BestScore", "BEST 0", new Vector2(0f, 25f), 17f, FontStyles.Bold);
+        bestScoreText.color = new Color(0.2f, 0.13f, 0.03f, 1f);
+        return button;
+    }
+
+    private static TMP_Text CreateChildText(Transform parent, string objectName, string text, Vector2 anchoredPosition, float fontSize, FontStyles fontStyle)
+    {
+        GameObject textObject = new GameObject(objectName, typeof(RectTransform), typeof(TextMeshProUGUI));
+        textObject.transform.SetParent(parent, false);
+
+        RectTransform textRect = textObject.GetComponent<RectTransform>();
+        textRect.anchorMin = new Vector2(0.5f, 0.5f);
+        textRect.anchorMax = new Vector2(0.5f, 0.5f);
+        textRect.sizeDelta = new Vector2(300f, 34f);
+        textRect.anchoredPosition = anchoredPosition;
+
+        TMP_Text textComponent = textObject.GetComponent<TMP_Text>();
+        textComponent.text = text;
+        textComponent.fontSize = fontSize;
+        textComponent.fontStyle = fontStyle;
+        textComponent.alignment = TextAlignmentOptions.Center;
+        return textComponent;
     }
 
     private Color GetToneColor(StatusTone tone)

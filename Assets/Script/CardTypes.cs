@@ -3,6 +3,7 @@ using System;
 public enum CardType
 {
     Stair,
+    Chest,
     Monster,
     GoodItem,
     BadItem,
@@ -49,6 +50,11 @@ public sealed class CardData
         return new CardData(CardType.Stair);
     }
 
+    public static CardData CreateChest()
+    {
+        return new CardData(CardType.Chest);
+    }
+
     public static CardData CreateMonster()
     {
         return new CardData(CardType.Monster);
@@ -74,11 +80,17 @@ public sealed class CardData
         IsConsumed = true;
     }
 
+    public void ResetConsumed()
+    {
+        IsConsumed = false;
+    }
+
     public string GetRevealTitle()
     {
         return Type switch
         {
             CardType.Stair => "계단",
+            CardType.Chest => "보물 상자",
             CardType.Monster => "몬스터",
             CardType.GoodItem when GoodItemType == GoodItemType.Shield => "방패",
             CardType.BadItem when BadItemType == BadItemType.Curse => "저주",
@@ -94,9 +106,10 @@ public sealed class CardData
         return Type switch
         {
             CardType.Stair => "다음 층으로 이동",
+            CardType.Chest => "스테이지 통과",
             CardType.Monster => "방패가 없으면 즉시 패배",
             CardType.GoodItem when GoodItemType == GoodItemType.Shield => "몬스터를 한 번 막아 줌",
-            CardType.BadItem when BadItemType == BadItemType.Curse => "다음 결과 문구를 가림",
+            CardType.BadItem when BadItemType == BadItemType.Curse => "2칸 전으로 되돌아감",
             CardType.Empty => "아무 일도 일어나지 않음",
             CardType.GoodItem => "도움이 되는 효과",
             CardType.BadItem => "나쁜 효과",

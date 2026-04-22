@@ -153,6 +153,7 @@ MonoBehaviour:
   canvasGroup: {fileID: 5810828564034085206}
   faceDownSprite: {fileID: -8246103488371625927, guid: 6c4c63cf23d6ea242bdc0233abd05bf2, type: 3}
   stairSprite: {fileID: 8963368785945452489, guid: 5014deace7dad694894a8bd591f336ab, type: 3}
+  chestSprite: {fileID: -2922113337684369405, guid: 5014deace7dad694894a8bd591f336ab, type: 3}
   monsterSprite: {fileID: -1145144668836272637, guid: 5014deace7dad694894a8bd591f336ab, type: 3}
   shieldSprite: {fileID: -7415955986125602904, guid: 5014deace7dad694894a8bd591f336ab, type: 3}
   curseSprite: {fileID: 7024648501981196136, guid: 5014deace7dad694894a8bd591f336ab, type: 3}

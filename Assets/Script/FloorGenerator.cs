@@ -3,17 +3,12 @@ using UnityEngine;
 
 public sealed class FloorGenerator : MonoBehaviour
 {
-    [Header("Third Card Weights")]
-    [SerializeField, Min(0)] private int emptyWeight = 60;
-    [SerializeField, Min(0)] private int badItemWeight = 20;
-    [SerializeField, Min(0)] private int goodItemWeight = 20;
-
     public int GetRowCountForFloor(int floorNumber)
     {
         return Mathf.Max(1, floorNumber);
     }
 
-    public List<CardData> GenerateFloor(int floorNumber)
+    public List<CardData> GenerateFloor(int floorNumber, GameDifficultyProfile difficultyProfile)
     {
         int rowCount = GetRowCountForFloor(floorNumber);
         List<CardData> cards = new(rowCount * 3);
@@ -22,9 +17,9 @@ public sealed class FloorGenerator : MonoBehaviour
         {
             List<CardData> rowCards = new(3)
             {
-                CardData.CreateStair(),
+                rowIndex == 0 ? CardData.CreateChest() : CardData.CreateStair(),
                 CardData.CreateMonster(),
-                RollRandomThirdCard()
+                RollRandomThirdCard(difficultyProfile)
             };
 
             Shuffle(rowCards);
@@ -34,13 +29,13 @@ public sealed class FloorGenerator : MonoBehaviour
         return cards;
     }
 
-    private CardData RollRandomThirdCard()
+    private static CardData RollRandomThirdCard(GameDifficultyProfile difficultyProfile)
     {
         int[] weights =
         {
-            emptyWeight,
-            badItemWeight,
-            goodItemWeight
+            difficultyProfile.emptyWeight,
+            difficultyProfile.curseWeight,
+            difficultyProfile.goodItemWeight
         };
 
         return WeightedRandomUtility.ChooseIndex(weights) switch
