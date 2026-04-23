@@ -8,16 +8,26 @@ public sealed class FloorGenerator : MonoBehaviour
         return Mathf.Max(1, floorNumber);
     }
 
+    public int GetTotalRowCountForFloor(int floorNumber)
+    {
+        return GetRowCountForFloor(floorNumber) + 1;
+    }
+
     public List<CardData> GenerateFloor(int floorNumber, GameDifficultyProfile difficultyProfile)
     {
-        int rowCount = GetRowCountForFloor(floorNumber);
-        List<CardData> cards = new(rowCount * 3);
+        int regularRowCount = GetRowCountForFloor(floorNumber);
+        List<CardData> cards = new(GetTotalRowCountForFloor(floorNumber) * 3)
+        {
+            CardData.CreatePlaceholder(),
+            CardData.CreateChest(),
+            CardData.CreatePlaceholder()
+        };
 
-        for (int rowIndex = 0; rowIndex < rowCount; rowIndex++)
+        for (int rowIndex = 0; rowIndex < regularRowCount; rowIndex++)
         {
             List<CardData> rowCards = new(3)
             {
-                rowIndex == 0 ? CardData.CreateChest() : CardData.CreateStair(),
+                CardData.CreateStair(),
                 CardData.CreateMonster(),
                 RollRandomThirdCard(difficultyProfile)
             };

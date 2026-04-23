@@ -71,11 +71,17 @@ public sealed class CardView : MonoBehaviour
 
     public void SetInteractable(bool interactable)
     {
-        button.interactable = interactable && !cardData.IsConsumed;
+        button.interactable = interactable && !cardData.IsConsumed && !cardData.IsPlaceholder;
     }
 
     public void SetConsumedVisual()
     {
+        if (cardData.IsPlaceholder)
+        {
+            ShowPlaceholderImmediate();
+            return;
+        }
+
         button.interactable = false;
         if (canvasGroup != null)
         {
@@ -88,6 +94,12 @@ public sealed class CardView : MonoBehaviour
 
     public void ShowRevealedImmediate()
     {
+        if (cardData.IsPlaceholder)
+        {
+            ShowPlaceholderImmediate();
+            return;
+        }
+
         ApplySprite(GetRevealSprite(cardData));
         SetOptionalText(titleText, cardData.GetRevealTitle());
         SetOptionalText(detailText, cardData.GetRevealSubtitle());
@@ -96,6 +108,12 @@ public sealed class CardView : MonoBehaviour
 
     public void ShowFaceDownImmediate()
     {
+        if (cardData.IsPlaceholder)
+        {
+            ShowPlaceholderImmediate();
+            return;
+        }
+
         ApplySprite(faceDownSprite);
         SetOptionalText(titleText, $"카드 {cardIndex + 1}");
         SetOptionalText(detailText, "눌러서 공개");
@@ -164,6 +182,19 @@ public sealed class CardView : MonoBehaviour
         }
     }
 
+    private void ShowPlaceholderImmediate()
+    {
+        if (canvasGroup != null)
+        {
+            canvasGroup.alpha = 0f;
+        }
+
+        button.interactable = false;
+        SetOptionalText(titleText, string.Empty);
+        SetOptionalText(detailText, string.Empty);
+        transform.localScale = initialScale;
+    }
+
     private void ApplySprite(Sprite sprite)
     {
         backgroundImage.sprite = sprite;
@@ -175,6 +206,8 @@ public sealed class CardView : MonoBehaviour
     {
         switch (data.Type)
         {
+            case CardType.Placeholder:
+                return faceDownSprite;
             case CardType.Stair:
                 return stairSprite;
             case CardType.Chest:

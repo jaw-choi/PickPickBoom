@@ -2,6 +2,7 @@ using System;
 
 public enum CardType
 {
+    Placeholder,
     Stair,
     Chest,
     Monster,
@@ -37,6 +38,7 @@ public sealed class CardData
     public GoodItemType GoodItemType { get; }
     public BadItemType BadItemType { get; }
     public bool IsConsumed { get; private set; }
+    public bool IsPlaceholder => Type == CardType.Placeholder;
 
     private CardData(CardType type, GoodItemType goodItemType = GoodItemType.None, BadItemType badItemType = BadItemType.None)
     {
@@ -48,6 +50,11 @@ public sealed class CardData
     public static CardData CreateStair()
     {
         return new CardData(CardType.Stair);
+    }
+
+    public static CardData CreatePlaceholder()
+    {
+        return new CardData(CardType.Placeholder);
     }
 
     public static CardData CreateChest()
@@ -87,6 +94,11 @@ public sealed class CardData
 
     public string GetRevealTitle()
     {
+        if (IsPlaceholder)
+        {
+            return string.Empty;
+        }
+
         return Type switch
         {
             CardType.Stair => "계단",
@@ -103,6 +115,11 @@ public sealed class CardData
 
     public string GetRevealSubtitle()
     {
+        if (IsPlaceholder)
+        {
+            return string.Empty;
+        }
+
         return Type switch
         {
             CardType.Stair => "다음 층으로 이동",

@@ -24,6 +24,7 @@ public sealed class GameManager : MonoBehaviour
     private bool isGameOver;
     private int currentTowerHeight;
     private int bestTowerHeight;
+    private int currentBoardRowCount;
     private int activeRowContentIndex;
 
     private void Start()
@@ -96,7 +97,7 @@ public sealed class GameManager : MonoBehaviour
         }
 
         CardData selectedCard = currentFloorCards[cardIndex];
-        if (selectedCard.IsConsumed)
+        if (selectedCard.IsConsumed || selectedCard.IsPlaceholder)
         {
             return;
         }
@@ -126,6 +127,9 @@ public sealed class GameManager : MonoBehaviour
 
         switch (selectedCard.Type)
         {
+            case CardType.Placeholder:
+                isResolvingCard = false;
+                yield break;
             case CardType.Stair:
                 yield return ResolveStair(selectedCard, selectedView, hideResultMessage);
                 yield break;
@@ -179,6 +183,7 @@ public sealed class GameManager : MonoBehaviour
     {
         selectedCard.Consume();
         selectedView.SetConsumedVisual();
+        uiManager.PlayDangerPulse();
 
         if (playerState.ConsumeShield())
         {
@@ -238,6 +243,7 @@ public sealed class GameManager : MonoBehaviour
     {
         selectedCard.Consume();
         selectedView.SetConsumedVisual();
+        uiManager.PlayDangerPulse();
 
         yield return RewindAfterCurse();
     }
@@ -266,7 +272,7 @@ public sealed class GameManager : MonoBehaviour
             yield return uiManager.PlayScrollToRow(
                 currentRowContentIndex,
                 activeRowContentIndex,
-                currentTowerHeight,
+                currentBoardRowCount,
                 commonRowAdvanceScrollDuration);
 
             isResolvingCard = false;
@@ -292,7 +298,7 @@ public sealed class GameManager : MonoBehaviour
     private IEnumerator RewindAfterCurse()
     {
         int fromRowContentIndex = activeRowContentIndex;
-        int targetRowContentIndex = Mathf.Min(currentTowerHeight - 1, activeRowContentIndex + 2);
+        int targetRowContentIndex = Mathf.Min(currentBoardRowCount - 1, activeRowContentIndex + 2);
 
         ResetRowsForRetry(fromRowContentIndex, targetRowContentIndex);
         activeRowContentIndex = targetRowContentIndex;
@@ -302,12 +308,12 @@ public sealed class GameManager : MonoBehaviour
             yield return uiManager.PlayScrollToRow(
                 fromRowContentIndex,
                 targetRowContentIndex,
-                currentTowerHeight,
+                currentBoardRowCount,
                 commonRowAdvanceScrollDuration);
         }
         else
         {
-            uiManager.JumpToRow(activeRowContentIndex, currentTowerHeight);
+            uiManager.JumpToRow(activeRowContentIndex, currentBoardRowCount);
         }
 
         isResolvingCard = false;
@@ -350,8 +356,9 @@ public sealed class GameManager : MonoBehaviour
     {
         currentTowerHeight = towerHeight;
         bestTowerHeight = Mathf.Max(bestTowerHeight, currentTowerHeight);
+        currentBoardRowCount = floorGenerator.GetTotalRowCountForFloor(currentTowerHeight);
         currentFloorCards = floorGenerator.GenerateFloor(currentTowerHeight, GetCurrentDifficultyProfile());
-        activeRowContentIndex = currentTowerHeight - 1;
+        activeRowContentIndex = currentBoardRowCount - 1;
 
         uiManager.BindFloorCards(currentFloorCards, HandleCardSelected);
         uiManager.RefreshHud(currentTowerHeight, bestTowerHeight, 1, playerState);
@@ -372,7 +379,7 @@ public sealed class GameManager : MonoBehaviour
 
         GameDifficultyProfile difficultyProfile = GetCurrentDifficultyProfile();
 
-        yield return uiManager.PlayBoardPreviewPan(currentTowerHeight, difficultyProfile.boardPanDurationPerRow);
+        yield return uiManager.PlayBoardPreviewPan(currentBoardRowCount, difficultyProfile.boardPanDurationPerRow);
 
         if (difficultyProfile.floorPreviewDuration > 0f)
         {
@@ -396,7 +403,7 @@ public sealed class GameManager : MonoBehaviour
             }
         }
 
-        uiManager.JumpToRow(activeRowContentIndex, currentTowerHeight);
+        uiManager.JumpToRow(activeRowContentIndex, currentBoardRowCount);
         isResolvingCard = false;
         uiManager.SetCardInteractionForRow(currentFloorCards, activeRowContentIndex, true);
         uiManager.SetStatusMessage("가장 아래 행부터 시작합니다. 이 행의 카드 하나를 선택하세요.", StatusTone.Neutral);
@@ -405,12 +412,14 @@ public sealed class GameManager : MonoBehaviour
 
     private int GetActiveFloorNumber()
     {
-        return currentTowerHeight - activeRowContentIndex;
+        return activeRowContentIndex == 0
+            ? currentTowerHeight
+            : currentBoardRowCount - activeRowContentIndex;
     }
 
     private bool IsActiveRowTopRow()
     {
-        return activeRowContentIndex == 0;
+        return activeRowContentIndex == 1;
     }
 
     private GameDifficultyProfile GetCurrentDifficultyProfile()

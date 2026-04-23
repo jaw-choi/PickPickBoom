@@ -19,6 +19,32 @@ public sealed class UIManager : MonoBehaviour
     [SerializeField] private RectTransform cardContentRoot = null!;
     [SerializeField] private CardView cardViewPrefab = null!;
 
+    [Header("Board Background")]
+    [SerializeField] private RectTransform boardBackgroundRoot;
+    [SerializeField] private Image boardWallImage;
+    [SerializeField] private Image boardGroundImage;
+    [SerializeField] private Image boardFinalImage;
+    [SerializeField] private Sprite wallSprite;
+    [SerializeField] private Sprite lastWallSprite;
+    [SerializeField] private Sprite groundSprite;
+    [SerializeField] private Sprite finalSprite;
+    [SerializeField] private Color fallbackWallColor = new(0.24f, 0.28f, 0.33f, 1f);
+    [SerializeField] private Color fallbackGroundColor = new(0.26f, 0.3f, 0.18f, 1f);
+    [SerializeField] private Color fallbackFinalColor = new(0.68f, 0.58f, 0.28f, 1f);
+
+    [Header("Board Layout Tuning")]
+    [SerializeField] private Vector2 cardContentOffset;
+    [SerializeField, Min(0.1f)] private float cardContentScale = 1f;
+    [SerializeField] private bool alignCardContentFromBottom = true;
+    [SerializeField] private Vector2 bottomAlignedCardOffset;
+    [SerializeField] private Vector2 wallTileOffset;
+    [SerializeField, Min(0.1f)] private float wallTileScale = 1f;
+    [SerializeField, Min(0.1f)] private float wallTileHeightMultiplier = 1f;
+    [SerializeField] private Vector2 groundOffset;
+    [SerializeField, Min(0.1f)] private float groundHeightMultiplier = 1f;
+    [SerializeField] private Vector2 finalOffset;
+    [SerializeField, Min(0.1f)] private float finalHeightMultiplier = 1f;
+
     [Header("Intro")]
     [SerializeField] private GameObject introPanel;
     [SerializeField] private Button easyButton;
@@ -40,6 +66,12 @@ public sealed class UIManager : MonoBehaviour
     [SerializeField] private Color badColor = new(1f, 0.57f, 0.57f, 1f);
     [SerializeField] private Color warningColor = new(1f, 0.86f, 0.46f, 1f);
 
+    [Header("Danger FX")]
+    [SerializeField] private CanvasGroup dangerPulseGroup;
+    [SerializeField] private Color dangerPulseColor = new(1f, 0.03f, 0.02f, 0.22f);
+    [SerializeField, Min(0.01f)] private float dangerPulseDuration = 0.42f;
+    [SerializeField, Min(0f)] private float dangerPulsePeakScale = 1.08f;
+
     private readonly List<CardView> cardViews = new();
     private Action restartRequested;
     private Action mainMenuRequested;
@@ -48,6 +80,39 @@ public sealed class UIManager : MonoBehaviour
     private bool hasCachedBaseGridPadding;
     private int baseGridPaddingTop;
     private int baseGridPaddingBottom;
+    private Coroutine dangerPulseRoutine;
+    private RectTransform dangerPulseRect;
+    private RectTransform boardWallRect;
+    private RectTransform boardGroundRect;
+    private RectTransform boardFinalRect;
+    private readonly List<Image> boardWallTiles = new();
+    private bool hasCachedBoardTuning;
+    private Vector2 cachedCardContentOffset;
+    private float cachedCardContentScale;
+    private bool cachedAlignCardContentFromBottom;
+    private Vector2 cachedBottomAlignedCardOffset;
+    private Vector2 cachedWallTileOffset;
+    private float cachedWallTileScale;
+    private float cachedWallTileHeightMultiplier;
+    private Vector2 cachedGroundOffset;
+    private float cachedGroundHeightMultiplier;
+    private Vector2 cachedFinalOffset;
+    private float cachedFinalHeightMultiplier;
+    private Sprite cachedWallSprite;
+    private Sprite cachedLastWallSprite;
+    private Sprite cachedGroundSprite;
+    private Sprite cachedFinalSprite;
+    private Color cachedFallbackWallColor;
+    private Color cachedFallbackGroundColor;
+    private Color cachedFallbackFinalColor;
+
+    private enum DangerEdgeDirection
+    {
+        Top,
+        Bottom,
+        Left,
+        Right
+    }
 
     public int ActiveCardCount => activeCardCount;
 
@@ -55,6 +120,8 @@ public sealed class UIManager : MonoBehaviour
     {
         CreateDefaultIntroPanelIfNeeded();
         CreateDefaultGameOverButtonsIfNeeded();
+        CreateDefaultBoardBackgroundIfNeeded();
+        CreateDefaultDangerPulseIfNeeded();
 
         if (restartButton != null)
         {
@@ -115,6 +182,16 @@ public sealed class UIManager : MonoBehaviour
         }
     }
 
+    private void Update()
+    {
+        if (!Application.isPlaying)
+        {
+            return;
+        }
+
+        RefreshBoardTuningIfChanged();
+    }
+
     public bool HasIntroPanel => introPanel != null;
 
     public void Initialize(
@@ -141,6 +218,8 @@ public sealed class UIManager : MonoBehaviour
 
         SetAllActiveCards(false);
         SetBoardNavigationEnabled(false);
+        SetBoardVisible(false);
+        SetTopBarVisible(false);
     }
 
     public void HideIntro()
@@ -149,6 +228,9 @@ public sealed class UIManager : MonoBehaviour
         {
             introPanel.SetActive(false);
         }
+
+        SetBoardVisible(true);
+        SetTopBarVisible(true);
     }
 
     public void SetIntroBestScores(int easyBestScore, int normalBestScore, int hardBestScore)
@@ -227,6 +309,22 @@ public sealed class UIManager : MonoBehaviour
         }
     }
 
+    private void SetBoardVisible(bool visible)
+    {
+        if (boardScrollRect != null)
+        {
+            boardScrollRect.gameObject.SetActive(visible);
+        }
+    }
+
+    private void SetTopBarVisible(bool visible)
+    {
+        if (currentFloorText != null && currentFloorText.transform.parent != null)
+        {
+            currentFloorText.transform.parent.gameObject.SetActive(visible);
+        }
+    }
+
     public void ResetBoardScrollToTop()
     {
         if (boardScrollRect == null)
@@ -237,6 +335,7 @@ public sealed class UIManager : MonoBehaviour
         Canvas.ForceUpdateCanvases();
         RebuildBoardLayout();
         boardScrollRect.verticalNormalizedPosition = 1f;
+        UpdateBoardBackground(1f);
     }
 
     public void JumpToRow(int rowContentIndex, int totalRows)
@@ -248,7 +347,9 @@ public sealed class UIManager : MonoBehaviour
 
         RebuildBoardLayout();
         boardScrollRect.StopMovement();
-        boardScrollRect.verticalNormalizedPosition = GetNormalizedPositionForRow(rowContentIndex, totalRows);
+        float targetPosition = GetNormalizedPositionForRow(rowContentIndex, totalRows);
+        boardScrollRect.verticalNormalizedPosition = targetPosition;
+        UpdateBoardBackground(targetPosition);
     }
 
     public IEnumerator PlayBoardPreviewPan(int rowCount, float perRowDuration)
@@ -260,6 +361,7 @@ public sealed class UIManager : MonoBehaviour
 
         RebuildBoardLayout();
         boardScrollRect.verticalNormalizedPosition = 1f;
+        UpdateBoardBackground(1f);
 
         float duration = Mathf.Max(0f, rowCount - 1) * perRowDuration;
         if (duration <= 0f)
@@ -272,11 +374,14 @@ public sealed class UIManager : MonoBehaviour
         {
             elapsed += Time.unscaledDeltaTime;
             float t = Mathf.Clamp01(elapsed / duration);
-            boardScrollRect.verticalNormalizedPosition = Mathf.Lerp(1f, 0f, t);
+            float position = Mathf.Lerp(1f, 0f, t);
+            boardScrollRect.verticalNormalizedPosition = position;
+            UpdateBoardBackground(position);
             yield return null;
         }
 
         boardScrollRect.verticalNormalizedPosition = 0f;
+        UpdateBoardBackground(0f);
     }
 
     public IEnumerator PlayScrollToRow(int fromRowContentIndex, int toRowContentIndex, int totalRows, float duration)
@@ -292,10 +397,12 @@ public sealed class UIManager : MonoBehaviour
         float start = GetNormalizedPositionForRow(fromRowContentIndex, totalRows);
         float target = GetNormalizedPositionForRow(toRowContentIndex, totalRows);
         boardScrollRect.verticalNormalizedPosition = start;
+        UpdateBoardBackground(start);
 
         if (duration <= 0f)
         {
             boardScrollRect.verticalNormalizedPosition = target;
+            UpdateBoardBackground(target);
             yield break;
         }
 
@@ -304,11 +411,14 @@ public sealed class UIManager : MonoBehaviour
         {
             elapsed += Time.unscaledDeltaTime;
             float t = Mathf.Clamp01(elapsed / duration);
-            boardScrollRect.verticalNormalizedPosition = Mathf.Lerp(start, target, t);
+            float position = Mathf.Lerp(start, target, t);
+            boardScrollRect.verticalNormalizedPosition = position;
+            UpdateBoardBackground(position);
             yield return null;
         }
 
         boardScrollRect.verticalNormalizedPosition = target;
+        UpdateBoardBackground(target);
         boardScrollRect.StopMovement();
     }
 
@@ -316,6 +426,21 @@ public sealed class UIManager : MonoBehaviour
     {
         statusMessageText.text = message;
         statusMessageText.color = GetToneColor(tone);
+    }
+
+    public void PlayDangerPulse()
+    {
+        if (dangerPulseGroup == null)
+        {
+            return;
+        }
+
+        if (dangerPulseRoutine != null)
+        {
+            StopCoroutine(dangerPulseRoutine);
+        }
+
+        dangerPulseRoutine = StartCoroutine(PlayDangerPulseRoutine());
     }
 
     public void HideGameOver()
@@ -468,7 +593,8 @@ public sealed class UIManager : MonoBehaviour
         cardContentRoot.anchorMin = new Vector2(0f, 1f);
         cardContentRoot.anchorMax = new Vector2(1f, 1f);
         cardContentRoot.pivot = new Vector2(0.5f, 1f);
-        cardContentRoot.anchoredPosition = Vector2.zero;
+        cardContentRoot.anchoredPosition = GetCardContentAnchoredPosition();
+        cardContentRoot.localScale = new Vector3(cardContentScale, cardContentScale, 1f);
     }
 
     private void ResizeContentHeight()
@@ -489,6 +615,7 @@ public sealed class UIManager : MonoBehaviour
         float contentHeight = GetRequiredContentHeight(gridLayoutGroup);
         float targetHeight = Mathf.Max(viewportHeight, contentHeight);
         cardContentRoot.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, targetHeight);
+        cardContentRoot.anchoredPosition = GetCardContentAnchoredPosition();
     }
 
     private float GetRequiredContentHeight(GridLayoutGroup gridLayoutGroup)
@@ -540,6 +667,297 @@ public sealed class UIManager : MonoBehaviour
         }
 
         return 0f;
+    }
+
+    private void CreateDefaultBoardBackgroundIfNeeded()
+    {
+        if (boardBackgroundRoot != null || boardScrollRect == null)
+        {
+            CacheBackgroundRects();
+            return;
+        }
+
+        RectTransform scrollRectTransform = boardScrollRect.transform as RectTransform;
+        if (scrollRectTransform == null)
+        {
+            return;
+        }
+
+        GameObject backgroundRootObject = new GameObject("BoardBackground", typeof(RectTransform));
+        backgroundRootObject.transform.SetParent(scrollRectTransform, false);
+        backgroundRootObject.transform.SetAsFirstSibling();
+
+        boardBackgroundRoot = backgroundRootObject.GetComponent<RectTransform>();
+        boardBackgroundRoot.anchorMin = Vector2.zero;
+        boardBackgroundRoot.anchorMax = Vector2.one;
+        boardBackgroundRoot.offsetMin = Vector2.zero;
+        boardBackgroundRoot.offsetMax = Vector2.zero;
+
+        boardWallImage = CreateBackgroundImage("WallTileTemplate", boardBackgroundRoot, wallSprite, fallbackWallColor);
+        boardWallImage.gameObject.SetActive(false);
+        boardGroundImage = CreateBackgroundImage("Ground", boardBackgroundRoot, groundSprite, fallbackGroundColor);
+        boardFinalImage = CreateBackgroundImage("FinalFloor", boardBackgroundRoot, finalSprite, fallbackFinalColor);
+        CacheBackgroundRects();
+        UpdateBoardBackground(1f);
+    }
+
+    private Image CreateBackgroundImage(string objectName, Transform parent, Sprite sprite, Color fallbackColor)
+    {
+        GameObject imageObject = new GameObject(objectName, typeof(RectTransform), typeof(Image));
+        imageObject.transform.SetParent(parent, false);
+
+        Image image = imageObject.GetComponent<Image>();
+        image.sprite = sprite;
+        image.color = sprite != null ? Color.white : fallbackColor;
+        image.preserveAspect = true;
+        image.raycastTarget = false;
+        image.type = Image.Type.Simple;
+        return image;
+    }
+
+    private Vector2 GetCardContentAnchoredPosition()
+    {
+        if (!alignCardContentFromBottom || boardScrollRect == null || cardContentRoot == null)
+        {
+            return cardContentOffset;
+        }
+
+        RectTransform viewport = boardScrollRect.viewport != null
+            ? boardScrollRect.viewport
+            : boardScrollRect.GetComponent<RectTransform>();
+        float viewportHeight = viewport != null ? viewport.rect.height : 0f;
+        float contentHeight = cardContentRoot.rect.height;
+        float bottomCompensation = Mathf.Max(0f, contentHeight - viewportHeight);
+
+        return cardContentOffset + bottomAlignedCardOffset + new Vector2(0f, bottomCompensation);
+    }
+
+    private void RefreshBoardTuningIfChanged()
+    {
+        if (!HasBoardTuningChanged())
+        {
+            return;
+        }
+
+        CacheBoardTuning();
+        RebuildBoardLayout();
+
+        if (boardScrollRect != null)
+        {
+            UpdateBoardBackground(boardScrollRect.verticalNormalizedPosition);
+        }
+    }
+
+    private bool HasBoardTuningChanged()
+    {
+        if (!hasCachedBoardTuning)
+        {
+            return true;
+        }
+
+        return cachedCardContentOffset != cardContentOffset ||
+            !Mathf.Approximately(cachedCardContentScale, cardContentScale) ||
+            cachedAlignCardContentFromBottom != alignCardContentFromBottom ||
+            cachedBottomAlignedCardOffset != bottomAlignedCardOffset ||
+            cachedWallTileOffset != wallTileOffset ||
+            !Mathf.Approximately(cachedWallTileScale, wallTileScale) ||
+            !Mathf.Approximately(cachedWallTileHeightMultiplier, wallTileHeightMultiplier) ||
+            cachedGroundOffset != groundOffset ||
+            !Mathf.Approximately(cachedGroundHeightMultiplier, groundHeightMultiplier) ||
+            cachedFinalOffset != finalOffset ||
+            !Mathf.Approximately(cachedFinalHeightMultiplier, finalHeightMultiplier) ||
+            cachedWallSprite != wallSprite ||
+            cachedLastWallSprite != lastWallSprite ||
+            cachedGroundSprite != groundSprite ||
+            cachedFinalSprite != finalSprite ||
+            cachedFallbackWallColor != fallbackWallColor ||
+            cachedFallbackGroundColor != fallbackGroundColor ||
+            cachedFallbackFinalColor != fallbackFinalColor;
+    }
+
+    private void CacheBoardTuning()
+    {
+        hasCachedBoardTuning = true;
+        cachedCardContentOffset = cardContentOffset;
+        cachedCardContentScale = cardContentScale;
+        cachedAlignCardContentFromBottom = alignCardContentFromBottom;
+        cachedBottomAlignedCardOffset = bottomAlignedCardOffset;
+        cachedWallTileOffset = wallTileOffset;
+        cachedWallTileScale = wallTileScale;
+        cachedWallTileHeightMultiplier = wallTileHeightMultiplier;
+        cachedGroundOffset = groundOffset;
+        cachedGroundHeightMultiplier = groundHeightMultiplier;
+        cachedFinalOffset = finalOffset;
+        cachedFinalHeightMultiplier = finalHeightMultiplier;
+        cachedWallSprite = wallSprite;
+        cachedLastWallSprite = lastWallSprite;
+        cachedGroundSprite = groundSprite;
+        cachedFinalSprite = finalSprite;
+        cachedFallbackWallColor = fallbackWallColor;
+        cachedFallbackGroundColor = fallbackGroundColor;
+        cachedFallbackFinalColor = fallbackFinalColor;
+    }
+
+    private void CacheBackgroundRects()
+    {
+        boardWallRect = boardWallImage != null ? boardWallImage.transform as RectTransform : null;
+        boardGroundRect = boardGroundImage != null ? boardGroundImage.transform as RectTransform : null;
+        boardFinalRect = boardFinalImage != null ? boardFinalImage.transform as RectTransform : null;
+    }
+
+    private void UpdateBoardBackground(float scrollNormalizedPosition)
+    {
+        if (boardBackgroundRoot == null)
+        {
+            return;
+        }
+
+        CacheBackgroundRects();
+
+        RectTransform viewport = boardScrollRect != null && boardScrollRect.viewport != null
+            ? boardScrollRect.viewport
+            : boardScrollRect != null
+                ? boardScrollRect.GetComponent<RectTransform>()
+                : null;
+
+        float viewportHeight = viewport != null ? viewport.rect.height : boardBackgroundRoot.rect.height;
+        float contentHeight = Mathf.Max(viewportHeight, cardContentRoot != null ? cardContentRoot.rect.height : viewportHeight);
+        float scrollOffset = (1f - Mathf.Clamp01(scrollNormalizedPosition)) * Mathf.Max(0f, contentHeight - viewportHeight);
+        float rowHeight = GetBackgroundRowHeight() * wallTileHeightMultiplier;
+        int rowCount = GetBoardWallRowCount() + 1;
+
+        EnsureBoardWallTileCount(rowCount);
+        UpdateBoardWallTiles(rowCount, rowHeight, contentHeight, scrollOffset);
+
+        if (boardGroundRect != null)
+        {
+            boardGroundImage.sprite = groundSprite;
+            boardGroundImage.color = groundSprite != null ? Color.white : fallbackGroundColor;
+            boardGroundImage.preserveAspect = true;
+
+            float groundHeight = Mathf.Max(90f, viewportHeight * 0.16f) * groundHeightMultiplier;
+            Vector2 groundBasePosition = new(0f, scrollOffset - (rowCount * rowHeight));
+
+            boardGroundRect.anchorMin = new Vector2(0f, 1f);
+            boardGroundRect.anchorMax = new Vector2(1f, 1f);
+            boardGroundRect.pivot = new Vector2(0.5f, 1f);
+            boardGroundRect.sizeDelta = new Vector2(0f, groundHeight);
+            boardGroundRect.anchoredPosition = groundBasePosition + wallTileOffset + groundOffset;
+
+            float groundTopY = boardGroundRect.anchoredPosition.y;
+            bool isGroundVisible = groundTopY > -viewportHeight;
+            boardGroundRect.gameObject.SetActive(isGroundVisible);
+        }
+
+        if (boardFinalRect != null)
+        {
+            boardFinalImage.sprite = finalSprite;
+            boardFinalImage.color = finalSprite != null ? Color.white : fallbackFinalColor;
+            boardFinalImage.preserveAspect = true;
+
+            boardFinalRect.anchorMin = new Vector2(0f, 1f);
+            boardFinalRect.anchorMax = new Vector2(1f, 1f);
+            boardFinalRect.pivot = new Vector2(0.5f, 1f);
+            boardFinalRect.sizeDelta = new Vector2(0f, rowHeight * finalHeightMultiplier);
+            boardFinalRect.anchoredPosition = new Vector2(0f, scrollOffset) + finalOffset;
+            boardFinalRect.gameObject.SetActive(scrollNormalizedPosition < 0.28f);
+        }
+    }
+
+    private float GetBackgroundRowHeight()
+    {
+        GridLayoutGroup gridLayoutGroup = cardContentRoot != null
+            ? cardContentRoot.GetComponent<GridLayoutGroup>()
+            : null;
+
+        float cellHeight = GetRowCellHeight(gridLayoutGroup);
+        float spacingY = gridLayoutGroup != null ? gridLayoutGroup.spacing.y : 0f;
+        return Mathf.Max(1f, cellHeight + spacingY);
+    }
+
+    private int GetBoardWallRowCount()
+    {
+        GridLayoutGroup gridLayoutGroup = cardContentRoot != null
+            ? cardContentRoot.GetComponent<GridLayoutGroup>()
+            : null;
+
+        int columnCount = Mathf.Max(1, GetColumnCount(gridLayoutGroup));
+        int rowCount = Mathf.CeilToInt(activeCardCount / (float)columnCount);
+        return Mathf.Max(1, rowCount);
+    }
+
+    private void EnsureBoardWallTileCount(int rowCount)
+    {
+        while (boardWallTiles.Count < rowCount)
+        {
+            Image tileImage = CreateBackgroundImage($"WallTile_{boardWallTiles.Count + 1}", boardBackgroundRoot, wallSprite, fallbackWallColor);
+            tileImage.transform.SetAsFirstSibling();
+            boardWallTiles.Add(tileImage);
+        }
+
+        for (int i = 0; i < boardWallTiles.Count; i++)
+        {
+            boardWallTiles[i].gameObject.SetActive(i < rowCount);
+            Sprite tileSprite = GetWallSpriteForTile(i, rowCount);
+            boardWallTiles[i].sprite = tileSprite;
+            boardWallTiles[i].color = tileSprite != null ? Color.white : fallbackWallColor;
+            boardWallTiles[i].preserveAspect = true;
+        }
+
+        if (boardGroundRect != null)
+        {
+            boardGroundRect.transform.SetAsLastSibling();
+        }
+
+        if (boardFinalRect != null)
+        {
+            boardFinalRect.transform.SetAsLastSibling();
+        }
+    }
+
+    private void UpdateBoardWallTiles(int rowCount, float rowHeight, float contentHeight, float scrollOffset)
+    {
+        for (int i = 0; i < rowCount; i++)
+        {
+            RectTransform tileRect = boardWallTiles[i].transform as RectTransform;
+            if (tileRect == null)
+            {
+                continue;
+            }
+
+            tileRect.anchorMin = new Vector2(0f, 1f);
+            tileRect.anchorMax = new Vector2(1f, 1f);
+            tileRect.pivot = new Vector2(0.5f, 1f);
+            tileRect.sizeDelta = new Vector2(0f, rowHeight);
+            float reversedRowIndex = rowCount - 1 - i;
+            tileRect.anchoredPosition = new Vector2(0f, scrollOffset - (reversedRowIndex * rowHeight)) + wallTileOffset;
+            tileRect.localScale = new Vector3(wallTileScale, wallTileScale, 1f);
+        }
+    }
+
+    private Sprite GetWallSpriteForTile(int tileIndex, int rowCount)
+    {
+        if (tileIndex == rowCount - 1)
+        {
+            return GetLastWallSprite();
+        }
+
+        return wallSprite;
+    }
+
+    private Sprite GetLastWallSprite()
+    {
+        if (lastWallSprite != null)
+        {
+            return lastWallSprite;
+        }
+
+        if (finalSprite != null)
+        {
+            return finalSprite;
+        }
+
+        return wallSprite;
     }
 
     private void HandleRestartClicked()
@@ -656,6 +1074,133 @@ public sealed class UIManager : MonoBehaviour
         TMP_Text labelText = CreateChildText(buttonObject.transform, $"{label}Label", label, Vector2.zero, 24f, FontStyles.Bold);
         labelText.color = new Color(0.12f, 0.09f, 0.05f, 1f);
         return button;
+    }
+
+    private void CreateDefaultDangerPulseIfNeeded()
+    {
+        if (dangerPulseGroup != null || boardScrollRect == null)
+        {
+            return;
+        }
+
+        Canvas canvas = boardScrollRect.GetComponentInParent<Canvas>();
+        if (canvas == null)
+        {
+            return;
+        }
+
+        GameObject pulseRoot = new GameObject("DangerPulseFX", typeof(RectTransform), typeof(CanvasGroup));
+        pulseRoot.transform.SetParent(canvas.transform, false);
+
+        dangerPulseRect = pulseRoot.GetComponent<RectTransform>();
+        dangerPulseRect.anchorMin = Vector2.zero;
+        dangerPulseRect.anchorMax = Vector2.one;
+        dangerPulseRect.offsetMin = Vector2.zero;
+        dangerPulseRect.offsetMax = Vector2.zero;
+
+        dangerPulseGroup = pulseRoot.GetComponent<CanvasGroup>();
+        dangerPulseGroup.alpha = 0f;
+        dangerPulseGroup.blocksRaycasts = false;
+        dangerPulseGroup.interactable = false;
+
+        CreateDangerEdge("Top", DangerEdgeDirection.Top, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -64f), new Vector2(0f, 128f));
+        CreateDangerEdge("Bottom", DangerEdgeDirection.Bottom, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 64f), new Vector2(0f, 128f));
+        CreateDangerEdge("Left", DangerEdgeDirection.Left, new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(64f, 0f), new Vector2(128f, 0f));
+        CreateDangerEdge("Right", DangerEdgeDirection.Right, new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(-64f, 0f), new Vector2(128f, 0f));
+
+        pulseRoot.transform.SetAsLastSibling();
+    }
+
+    private void CreateDangerEdge(
+        string edgeName,
+        DangerEdgeDirection direction,
+        Vector2 anchorMin,
+        Vector2 anchorMax,
+        Vector2 anchoredPosition,
+        Vector2 sizeDelta)
+    {
+        GameObject edgeObject = new GameObject($"DangerEdge_{edgeName}", typeof(RectTransform), typeof(Image));
+        edgeObject.transform.SetParent(dangerPulseGroup.transform, false);
+
+        RectTransform edgeRect = edgeObject.GetComponent<RectTransform>();
+        edgeRect.anchorMin = anchorMin;
+        edgeRect.anchorMax = anchorMax;
+        edgeRect.anchoredPosition = anchoredPosition;
+        edgeRect.sizeDelta = sizeDelta;
+
+        Image edgeImage = edgeObject.GetComponent<Image>();
+        edgeImage.sprite = CreateDangerGradientSprite(direction);
+        edgeImage.color = dangerPulseColor;
+        edgeImage.raycastTarget = false;
+    }
+
+    private static Sprite CreateDangerGradientSprite(DangerEdgeDirection direction)
+    {
+        const int textureSize = 64;
+        Texture2D texture = new(textureSize, textureSize, TextureFormat.RGBA32, false)
+        {
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear
+        };
+
+        for (int y = 0; y < textureSize; y++)
+        {
+            for (int x = 0; x < textureSize; x++)
+            {
+                float normalizedX = x / (float)(textureSize - 1);
+                float normalizedY = y / (float)(textureSize - 1);
+                float edgeStrength = direction switch
+                {
+                    DangerEdgeDirection.Top => normalizedY,
+                    DangerEdgeDirection.Bottom => 1f - normalizedY,
+                    DangerEdgeDirection.Left => 1f - normalizedX,
+                    DangerEdgeDirection.Right => normalizedX,
+                    _ => 0f
+                };
+
+                float alpha = Mathf.SmoothStep(0f, 1f, edgeStrength);
+                texture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+            }
+        }
+
+        texture.Apply();
+        return Sprite.Create(texture, new Rect(0f, 0f, textureSize, textureSize), new Vector2(0.5f, 0.5f), textureSize);
+    }
+
+    private IEnumerator PlayDangerPulseRoutine()
+    {
+        if (dangerPulseRect == null && dangerPulseGroup != null)
+        {
+            dangerPulseRect = dangerPulseGroup.transform as RectTransform;
+        }
+
+        float elapsed = 0f;
+        float halfDuration = dangerPulseDuration * 0.5f;
+        while (elapsed < dangerPulseDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float pulse = halfDuration <= 0f
+                ? 0f
+                : Mathf.PingPong(elapsed, halfDuration) / halfDuration;
+            float easedPulse = Mathf.Sin(pulse * Mathf.PI * 0.5f);
+
+            dangerPulseGroup.alpha = Mathf.Lerp(0.02f, 0.58f, easedPulse);
+            if (dangerPulseRect != null)
+            {
+                float scale = Mathf.Lerp(1f, dangerPulsePeakScale, easedPulse);
+                dangerPulseRect.localScale = new Vector3(scale, scale, 1f);
+            }
+
+            yield return null;
+        }
+
+        dangerPulseGroup.alpha = 0f;
+        if (dangerPulseRect != null)
+        {
+            dangerPulseRect.localScale = Vector3.one;
+        }
+
+        dangerPulseRoutine = null;
     }
 
     private TMP_Text CreateIntroText(string text, Vector2 anchoredPosition, float fontSize, FontStyles fontStyle)
