@@ -7,6 +7,13 @@ using UnityEngine.UI;
 
 public sealed class UIManager : MonoBehaviour
 {
+    private sealed class BoardRowView
+    {
+        public RectTransform Root = null!;
+        public Image Background = null!;
+        public RectTransform CardAnchor = null!;
+    }
+
     [Header("HUD")]
     [SerializeField] private TMP_Text currentFloorText = null!;
     [SerializeField] private TMP_Text bestFloorText = null!;
@@ -36,6 +43,8 @@ public sealed class UIManager : MonoBehaviour
     [Header("Board Layout Tuning")]
     [SerializeField] private Vector2 cardContentOffset;
     [SerializeField, Min(0.1f)] private float cardContentScale = 1f;
+    [SerializeField, Min(0.1f)] private float cardWidthScale = 1f;
+    [SerializeField, Min(0.1f)] private float cardHeightScale = 1f;
     [SerializeField] private bool alignCardContentFromBottom = true;
     [SerializeField] private Vector2 bottomAlignedCardOffset;
     [SerializeField, Range(-600f, 600f)] private float rowFocusOffsetY;
@@ -47,6 +56,9 @@ public sealed class UIManager : MonoBehaviour
     [SerializeField, Min(0.1f)] private float wallTileHeightMultiplier = 1f;
     [SerializeField] private float wallTileSpacing;
     [SerializeField] private Vector2 groundOffset;
+    [SerializeField, Min(0.1f)] private float groundScale = 1f;
+    [SerializeField, Min(0.1f)] private float groundWidthScale = 1f;
+    [SerializeField, Min(0.1f)] private float groundVisualHeightScale = 1f;
     [SerializeField, Min(0.1f)] private float groundHeightMultiplier = 1f;
     [SerializeField] private Vector2 finalOffset;
     [SerializeField, Min(0.1f)] private float finalHeightMultiplier = 1f;
@@ -86,17 +98,23 @@ public sealed class UIManager : MonoBehaviour
     private Action<GameDifficulty> difficultySelected;
     private int activeCardCount;
     private bool hasCachedBaseGridPadding;
+    private bool hasCachedBaseCardMetrics;
     private int baseGridPaddingTop;
     private int baseGridPaddingBottom;
+    private Vector2 baseCardCellSize;
+    private Vector2 baseCardSpacing;
     private Coroutine dangerPulseRoutine;
     private RectTransform dangerPulseRect;
     private RectTransform boardWallRect;
     private RectTransform boardGroundRect;
     private RectTransform boardFinalRect;
     private readonly List<Image> boardWallTiles = new();
+    private readonly List<BoardRowView> boardRows = new();
     private bool hasCachedBoardTuning;
     private Vector2 cachedCardContentOffset;
     private float cachedCardContentScale;
+    private float cachedCardWidthScale;
+    private float cachedCardHeightScale;
     private bool cachedAlignCardContentFromBottom;
     private Vector2 cachedBottomAlignedCardOffset;
     private float cachedRowFocusOffsetY;
@@ -108,6 +126,9 @@ public sealed class UIManager : MonoBehaviour
     private float cachedWallTileHeightMultiplier;
     private float cachedWallTileSpacing;
     private Vector2 cachedGroundOffset;
+    private float cachedGroundScale;
+    private float cachedGroundWidthScale;
+    private float cachedGroundVisualHeightScale;
     private float cachedGroundHeightMultiplier;
     private Vector2 cachedFinalOffset;
     private float cachedFinalHeightMultiplier;
@@ -259,6 +280,7 @@ public sealed class UIManager : MonoBehaviour
     {
         EnsureCardPoolSize(cards.Count);
         activeCardCount = cards.Count;
+        EnsureBoardRowPoolSize(GetBoardRowCount());
 
         for (int i = 0; i < cardViews.Count; i++)
         {
@@ -271,6 +293,7 @@ public sealed class UIManager : MonoBehaviour
             }
         }
 
+        ConfigureBoardRows(cards);
         RebuildBoardLayout();
         ResetBoardScrollToTop();
     }
@@ -545,6 +568,126 @@ public sealed class UIManager : MonoBehaviour
         }
     }
 
+    private void EnsureBoardRowPoolSize(int requiredCount)
+    {
+        while (boardRows.Count < requiredCount)
+        {
+            boardRows.Add(CreateBoardRowView(boardRows.Count));
+        }
+
+        for (int i = 0; i < boardRows.Count; i++)
+        {
+            boardRows[i].Root.gameObject.SetActive(i < requiredCount);
+        }
+    }
+
+    private BoardRowView CreateBoardRowView(int rowIndex)
+    {
+        GameObject rowObject = new GameObject($"BoardRow_{rowIndex + 1}", typeof(RectTransform), typeof(Image));
+        rowObject.transform.SetParent(cardContentRoot, false);
+
+        RectTransform rowRect = rowObject.GetComponent<RectTransform>();
+        rowRect.anchorMin = new Vector2(0.5f, 0.5f);
+        rowRect.anchorMax = new Vector2(0.5f, 0.5f);
+        rowRect.pivot = new Vector2(0.5f, 0.5f);
+
+        Image backgroundImage = rowObject.GetComponent<Image>();
+        backgroundImage.raycastTarget = false;
+        backgroundImage.type = Image.Type.Simple;
+        backgroundImage.preserveAspect = false;
+
+        GameObject cardAnchorObject = new GameObject("Cards", typeof(RectTransform));
+        cardAnchorObject.transform.SetParent(rowObject.transform, false);
+        RectTransform cardAnchorRect = cardAnchorObject.GetComponent<RectTransform>();
+        cardAnchorRect.anchorMin = Vector2.zero;
+        cardAnchorRect.anchorMax = Vector2.one;
+        cardAnchorRect.offsetMin = Vector2.zero;
+        cardAnchorRect.offsetMax = Vector2.zero;
+        cardAnchorRect.pivot = new Vector2(0.5f, 0.5f);
+
+        return new BoardRowView
+        {
+            Root = rowRect,
+            Background = backgroundImage,
+            CardAnchor = cardAnchorRect
+        };
+    }
+
+    private void ConfigureBoardRows(IReadOnlyList<CardData> cards)
+    {
+        int rowCount = GetBoardRowCount();
+        GridLayoutGroup gridLayoutGroup = cardContentRoot != null
+            ? cardContentRoot.GetComponent<GridLayoutGroup>()
+            : null;
+
+        CacheBaseCardMetrics(gridLayoutGroup);
+
+        for (int rowIndex = 0; rowIndex < boardRows.Count; rowIndex++)
+        {
+            bool isActiveRow = rowIndex < rowCount;
+            BoardRowView rowView = boardRows[rowIndex];
+            rowView.Root.gameObject.SetActive(isActiveRow);
+
+            if (!isActiveRow)
+            {
+                continue;
+            }
+
+            ConfigureBoardRowVisual(rowView, rowIndex, rowCount);
+            LayoutRowCards(rowView, rowIndex, cards);
+        }
+    }
+
+    private void ConfigureBoardRowVisual(BoardRowView rowView, int rowIndex, int rowCount)
+    {
+        Sprite rowSprite = GetWallSpriteForTile(rowIndex, rowCount);
+        rowView.Background.sprite = rowSprite;
+        rowView.Background.color = rowSprite != null ? Color.white : fallbackWallColor;
+        rowView.Background.preserveAspect = true;
+
+        RectTransform backgroundRect = rowView.Background.rectTransform;
+        backgroundRect.anchorMin = new Vector2(0.5f, 0.5f);
+        backgroundRect.anchorMax = new Vector2(0.5f, 0.5f);
+        backgroundRect.pivot = new Vector2(0.5f, 0.5f);
+        backgroundRect.anchoredPosition = wallTileOffset;
+    }
+
+    private void LayoutRowCards(BoardRowView rowView, int rowIndex, IReadOnlyList<CardData> cards)
+    {
+        Vector2 baseCardSize = GetBaseCardCellSize();
+        Vector2 cardSize = new Vector2(
+            baseCardSize.x * cardWidthScale,
+            baseCardSize.y * cardHeightScale);
+        float cardSpacingX = GetBaseCardSpacingX();
+        float totalWidth = (cardSize.x * 3f) + (cardSpacingX * 2f);
+        float startX = (-totalWidth * 0.5f) + (cardSize.x * 0.5f);
+        int rowStartIndex = rowIndex * 3;
+
+        for (int slotIndex = 0; slotIndex < 3; slotIndex++)
+        {
+            int cardIndex = rowStartIndex + slotIndex;
+            if (cardIndex >= cards.Count || cardIndex >= cardViews.Count)
+            {
+                continue;
+            }
+
+            RectTransform cardRect = cardViews[cardIndex].transform as RectTransform;
+            if (cardRect == null)
+            {
+                continue;
+            }
+
+            cardRect.SetParent(rowView.CardAnchor, false);
+            cardRect.anchorMin = new Vector2(0.5f, 0.5f);
+            cardRect.anchorMax = new Vector2(0.5f, 0.5f);
+            cardRect.pivot = new Vector2(0.5f, 0.5f);
+            cardRect.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, cardSize.x);
+            cardRect.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, cardSize.y);
+            cardRect.anchoredPosition = new Vector2(startX + (slotIndex * (cardSize.x + cardSpacingX)), 0f);
+            cardRect.localScale = Vector3.one;
+        }
+    }
+
     private void RebuildBoardLayout()
     {
         if (cardContentRoot == null)
@@ -555,6 +698,7 @@ public sealed class UIManager : MonoBehaviour
         ConfigureContentRectForScrolling();
         ApplyCenteredEdgePadding();
         ResizeContentHeight();
+        UpdateBoardRowLayout();
         LayoutRebuilder.ForceRebuildLayoutImmediate(cardContentRoot);
         Canvas.ForceUpdateCanvases();
     }
@@ -635,6 +779,18 @@ public sealed class UIManager : MonoBehaviour
         hasCachedBaseGridPadding = true;
     }
 
+    private void CacheBaseCardMetrics(GridLayoutGroup gridLayoutGroup)
+    {
+        if (hasCachedBaseCardMetrics || gridLayoutGroup == null)
+        {
+            return;
+        }
+
+        baseCardCellSize = gridLayoutGroup.cellSize;
+        baseCardSpacing = gridLayoutGroup.spacing;
+        hasCachedBaseCardMetrics = true;
+    }
+
     private void ConfigureContentRectForScrolling()
     {
         if (cardContentRoot == null)
@@ -642,6 +798,8 @@ public sealed class UIManager : MonoBehaviour
             return;
         }
 
+        GridLayoutGroup gridLayoutGroup = cardContentRoot.GetComponent<GridLayoutGroup>();
+        ConfigureRowGridLayout(gridLayoutGroup);
         cardContentRoot.anchorMin = new Vector2(0f, 1f);
         cardContentRoot.anchorMax = new Vector2(1f, 1f);
         cardContentRoot.pivot = new Vector2(0.5f, 1f);
@@ -678,7 +836,7 @@ public sealed class UIManager : MonoBehaviour
         }
 
         int columnCount = Mathf.Max(1, GetColumnCount(gridLayoutGroup));
-        int rowCount = Mathf.CeilToInt(activeCardCount / (float)columnCount);
+        int rowCount = Mathf.CeilToInt(GetBoardRowCount() / (float)columnCount);
         if (rowCount <= 0)
         {
             return 0f;
@@ -810,6 +968,8 @@ public sealed class UIManager : MonoBehaviour
 
         return cachedCardContentOffset != cardContentOffset ||
             !Mathf.Approximately(cachedCardContentScale, cardContentScale) ||
+            !Mathf.Approximately(cachedCardWidthScale, cardWidthScale) ||
+            !Mathf.Approximately(cachedCardHeightScale, cardHeightScale) ||
             cachedAlignCardContentFromBottom != alignCardContentFromBottom ||
             cachedBottomAlignedCardOffset != bottomAlignedCardOffset ||
             !Mathf.Approximately(cachedRowFocusOffsetY, rowFocusOffsetY) ||
@@ -821,6 +981,9 @@ public sealed class UIManager : MonoBehaviour
             !Mathf.Approximately(cachedWallTileHeightMultiplier, wallTileHeightMultiplier) ||
             !Mathf.Approximately(cachedWallTileSpacing, wallTileSpacing) ||
             cachedGroundOffset != groundOffset ||
+            !Mathf.Approximately(cachedGroundScale, groundScale) ||
+            !Mathf.Approximately(cachedGroundWidthScale, groundWidthScale) ||
+            !Mathf.Approximately(cachedGroundVisualHeightScale, groundVisualHeightScale) ||
             !Mathf.Approximately(cachedGroundHeightMultiplier, groundHeightMultiplier) ||
             cachedFinalOffset != finalOffset ||
             !Mathf.Approximately(cachedFinalHeightMultiplier, finalHeightMultiplier) ||
@@ -847,6 +1010,9 @@ public sealed class UIManager : MonoBehaviour
             !Mathf.Approximately(cachedWallTileSpacing, wallTileSpacing) ||
             cachedWallTileOffset != wallTileOffset ||
             cachedGroundOffset != groundOffset ||
+            !Mathf.Approximately(cachedGroundScale, groundScale) ||
+            !Mathf.Approximately(cachedGroundWidthScale, groundWidthScale) ||
+            !Mathf.Approximately(cachedGroundVisualHeightScale, groundVisualHeightScale) ||
             !Mathf.Approximately(cachedGroundHeightMultiplier, groundHeightMultiplier) ||
             cachedFinalOffset != finalOffset ||
             !Mathf.Approximately(cachedFinalHeightMultiplier, finalHeightMultiplier) ||
@@ -864,6 +1030,8 @@ public sealed class UIManager : MonoBehaviour
         hasCachedBoardTuning = true;
         cachedCardContentOffset = cardContentOffset;
         cachedCardContentScale = cardContentScale;
+        cachedCardWidthScale = cardWidthScale;
+        cachedCardHeightScale = cardHeightScale;
         cachedAlignCardContentFromBottom = alignCardContentFromBottom;
         cachedBottomAlignedCardOffset = bottomAlignedCardOffset;
         cachedRowFocusOffsetY = rowFocusOffsetY;
@@ -875,6 +1043,9 @@ public sealed class UIManager : MonoBehaviour
         cachedWallTileHeightMultiplier = wallTileHeightMultiplier;
         cachedWallTileSpacing = wallTileSpacing;
         cachedGroundOffset = groundOffset;
+        cachedGroundScale = groundScale;
+        cachedGroundWidthScale = groundWidthScale;
+        cachedGroundVisualHeightScale = groundVisualHeightScale;
         cachedGroundHeightMultiplier = groundHeightMultiplier;
         cachedFinalOffset = finalOffset;
         cachedFinalHeightMultiplier = finalHeightMultiplier;
@@ -910,15 +1081,22 @@ public sealed class UIManager : MonoBehaviour
                 : null;
 
         float viewportHeight = viewport != null ? viewport.rect.height : boardBackgroundRoot.rect.height;
+        float viewportWidth = viewport != null ? viewport.rect.width : boardBackgroundRoot.rect.width;
         float contentHeight = Mathf.Max(viewportHeight, cardContentRoot != null ? cardContentRoot.rect.height : viewportHeight);
         float scrollOffset = (1f - Mathf.Clamp01(scrollNormalizedPosition)) * Mathf.Max(0f, contentHeight - viewportHeight);
-        float rowHeight = GetBackgroundRowHeight() * wallTileHeightMultiplier;
-        float rowStep = rowHeight + wallTileSpacing;
+        float rowHeight = GetBoardRowHeight();
+        float rowStep = rowHeight + GetBaseCardSpacingY();
         int rowCount = GetBoardWallRowCount();
-        Vector2 bottomAnchoredWallOffset = new(0f, -rowHeight);
 
-        EnsureBoardWallTileCount(rowCount);
-        UpdateBoardWallTiles(rowCount, rowHeight, rowStep, contentHeight, scrollOffset, bottomAnchoredWallOffset);
+        for (int i = 0; i < boardWallTiles.Count; i++)
+        {
+            boardWallTiles[i].gameObject.SetActive(false);
+        }
+
+        if (boardWallImage != null)
+        {
+            boardWallImage.gameObject.SetActive(false);
+        }
 
         if (boardGroundRect != null)
         {
@@ -927,13 +1105,31 @@ public sealed class UIManager : MonoBehaviour
             boardGroundImage.preserveAspect = true;
 
             float groundHeight = Mathf.Max(90f, viewportHeight * 0.16f) * groundHeightMultiplier;
-            Vector2 groundBasePosition = new Vector2(0f, scrollOffset - (rowCount * rowStep)) + bottomAnchoredWallOffset;
+            Vector2 groundBasePosition = new Vector2(0f, scrollOffset - (rowCount * rowStep));
 
-            boardGroundRect.anchorMin = new Vector2(0f, 1f);
-            boardGroundRect.anchorMax = new Vector2(1f, 1f);
+            boardGroundRect.anchorMin = new Vector2(0.5f, 1f);
+            boardGroundRect.anchorMax = new Vector2(0.5f, 1f);
             boardGroundRect.pivot = new Vector2(0.5f, 1f);
-            boardGroundRect.sizeDelta = new Vector2(0f, groundHeight);
-            boardGroundRect.anchoredPosition = groundBasePosition + wallTileOffset + groundOffset;
+            if (groundSprite != null)
+            {
+                boardGroundImage.SetNativeSize();
+            }
+            else
+            {
+                boardGroundRect.sizeDelta = new Vector2(viewportWidth, groundHeight);
+            }
+
+            boardGroundRect.localScale = new Vector3(
+                groundScale * groundWidthScale,
+                groundScale * groundVisualHeightScale * groundHeightMultiplier,
+                1f);
+
+            if (groundSprite == null)
+            {
+                boardGroundRect.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, groundHeight);
+            }
+
+            boardGroundRect.anchoredPosition = groundBasePosition + groundOffset;
 
             float groundTopY = boardGroundRect.anchoredPosition.y;
             bool isGroundVisible = groundTopY > -viewportHeight;
@@ -942,39 +1138,134 @@ public sealed class UIManager : MonoBehaviour
 
         if (boardFinalRect != null)
         {
-            boardFinalImage.sprite = finalSprite;
-            boardFinalImage.color = finalSprite != null ? Color.white : fallbackFinalColor;
-            boardFinalImage.preserveAspect = true;
-
-            boardFinalRect.anchorMin = new Vector2(0f, 1f);
-            boardFinalRect.anchorMax = new Vector2(1f, 1f);
-            boardFinalRect.pivot = new Vector2(0.5f, 1f);
-            boardFinalRect.sizeDelta = new Vector2(0f, rowHeight * finalHeightMultiplier);
-            boardFinalRect.anchoredPosition = new Vector2(0f, scrollOffset) + finalOffset;
-            boardFinalRect.gameObject.SetActive(scrollNormalizedPosition < 0.28f);
+            boardFinalRect.gameObject.SetActive(false);
         }
     }
 
     private float GetBackgroundRowHeight()
     {
+        return GetBoardRowHeight() + GetBaseCardSpacingY();
+    }
+
+    private void ConfigureRowGridLayout(GridLayoutGroup gridLayoutGroup)
+    {
+        if (gridLayoutGroup == null || boardScrollRect == null)
+        {
+            return;
+        }
+
+        CacheBaseCardMetrics(gridLayoutGroup);
+
+        RectTransform viewport = boardScrollRect.viewport != null
+            ? boardScrollRect.viewport
+            : boardScrollRect.GetComponent<RectTransform>();
+        float viewportWidth = viewport != null ? viewport.rect.width : cardContentRoot.rect.width;
+
+        gridLayoutGroup.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+        gridLayoutGroup.constraintCount = 1;
+        gridLayoutGroup.startAxis = GridLayoutGroup.Axis.Vertical;
+        gridLayoutGroup.cellSize = new Vector2(viewportWidth, GetBoardRowHeight());
+        gridLayoutGroup.spacing = new Vector2(0f, GetBaseCardSpacingY());
+    }
+
+    private void UpdateBoardRowLayout()
+    {
+        if (cardContentRoot == null)
+        {
+            return;
+        }
+
+        GridLayoutGroup gridLayoutGroup = cardContentRoot.GetComponent<GridLayoutGroup>();
+        float rowHeight = GetBoardRowHeight();
+        float rowWidth = gridLayoutGroup != null ? gridLayoutGroup.cellSize.x : cardContentRoot.rect.width;
+        int rowCount = GetBoardWallRowCount();
+
+        for (int rowIndex = 0; rowIndex < boardRows.Count; rowIndex++)
+        {
+            BoardRowView rowView = boardRows[rowIndex];
+            if (!rowView.Root.gameObject.activeSelf)
+            {
+                continue;
+            }
+
+            RectTransform backgroundRect = rowView.Background.rectTransform;
+            Sprite rowSprite = GetWallSpriteForTile(rowIndex, rowCount);
+            rowView.Background.sprite = rowSprite;
+            rowView.Background.color = rowSprite != null ? Color.white : fallbackWallColor;
+
+            if (rowSprite != null)
+            {
+                rowView.Background.SetNativeSize();
+            }
+            else
+            {
+                backgroundRect.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rowWidth);
+                backgroundRect.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, rowHeight);
+            }
+
+            backgroundRect.anchoredPosition = wallTileOffset;
+            backgroundRect.localScale = new Vector3(
+                wallTileScale * wallTileWidthScale,
+                wallTileScale * wallTileVisualHeightScale * wallTileHeightMultiplier,
+                1f);
+        }
+    }
+
+    private float GetBoardRowHeight()
+    {
+        return Mathf.Max(1f, GetBaseCardCellSize().y);
+    }
+
+    private Vector2 GetBaseCardCellSize()
+    {
+        if (hasCachedBaseCardMetrics)
+        {
+            return baseCardCellSize;
+        }
+
         GridLayoutGroup gridLayoutGroup = cardContentRoot != null
             ? cardContentRoot.GetComponent<GridLayoutGroup>()
             : null;
+        CacheBaseCardMetrics(gridLayoutGroup);
+        return hasCachedBaseCardMetrics ? baseCardCellSize : new Vector2(341f, 666f);
+    }
 
-        float cellHeight = GetRowCellHeight(gridLayoutGroup);
-        float spacingY = gridLayoutGroup != null ? gridLayoutGroup.spacing.y : 0f;
-        return Mathf.Max(1f, cellHeight + spacingY);
+    private float GetBaseCardSpacingX()
+    {
+        if (hasCachedBaseCardMetrics)
+        {
+            return baseCardSpacing.x;
+        }
+
+        GridLayoutGroup gridLayoutGroup = cardContentRoot != null
+            ? cardContentRoot.GetComponent<GridLayoutGroup>()
+            : null;
+        CacheBaseCardMetrics(gridLayoutGroup);
+        return hasCachedBaseCardMetrics ? baseCardSpacing.x : 20f;
+    }
+
+    private float GetBaseCardSpacingY()
+    {
+        if (hasCachedBaseCardMetrics)
+        {
+            return baseCardSpacing.y + wallTileSpacing;
+        }
+
+        GridLayoutGroup gridLayoutGroup = cardContentRoot != null
+            ? cardContentRoot.GetComponent<GridLayoutGroup>()
+            : null;
+        CacheBaseCardMetrics(gridLayoutGroup);
+        return (hasCachedBaseCardMetrics ? baseCardSpacing.y : 100f) + wallTileSpacing;
+    }
+
+    private int GetBoardRowCount()
+    {
+        return Mathf.Max(0, Mathf.CeilToInt(activeCardCount / 3f));
     }
 
     private int GetBoardWallRowCount()
     {
-        GridLayoutGroup gridLayoutGroup = cardContentRoot != null
-            ? cardContentRoot.GetComponent<GridLayoutGroup>()
-            : null;
-
-        int columnCount = Mathf.Max(1, GetColumnCount(gridLayoutGroup));
-        int rowCount = Mathf.CeilToInt(activeCardCount / (float)columnCount);
-        return Mathf.Max(1, rowCount);
+        return Mathf.Max(1, GetBoardRowCount());
     }
 
     private void EnsureBoardWallTileCount(int rowCount)
@@ -1031,7 +1322,7 @@ public sealed class UIManager : MonoBehaviour
 
     private Sprite GetWallSpriteForTile(int tileIndex, int rowCount)
     {
-        if (tileIndex == rowCount - 1)
+        if (tileIndex == 0)
         {
             return GetLastWallSprite();
         }
@@ -1084,6 +1375,11 @@ public sealed class UIManager : MonoBehaviour
         for (int i = 0; i < cardViews.Count; i++)
         {
             cardViews[i].gameObject.SetActive(active);
+        }
+
+        for (int i = 0; i < boardRows.Count; i++)
+        {
+            boardRows[i].Root.gameObject.SetActive(active && i < GetBoardRowCount());
         }
 
         if (!active)
