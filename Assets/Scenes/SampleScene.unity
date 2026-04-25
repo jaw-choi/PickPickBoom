@@ -3426,6 +3426,8 @@ MonoBehaviour:
   cardContentScale: 1
   alignCardContentFromBottom: 1
   bottomAlignedCardOffset: {x: 0, y: 0}
+  rowFocusOffsetY: -345
+  previewPanEndNormalizedPosition: 0.52
   wallTileOffset: {x: 0, y: 11}
   wallTileScale: 1.08
   wallTileHeightMultiplier: 1
