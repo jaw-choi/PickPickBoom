@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using TMPro;
@@ -10,8 +10,9 @@ public sealed class UIManager : MonoBehaviour
     [Header("HUD")]
     [SerializeField] private TMP_Text currentFloorText = null!;
     [SerializeField] private TMP_Text bestFloorText = null!;
-    [SerializeField] private TMP_Text shieldStatusText = null!;
-    [SerializeField] private TMP_Text curseStatusText = null!;
+    [SerializeField] private Image shieldStatusImage;
+    [HideInInspector, SerializeField] private TMP_Text shieldStatusText = null!;
+    [HideInInspector, SerializeField] private TMP_Text curseStatusText = null!;
     [SerializeField] private TMP_Text statusMessageText = null!;
 
     [Header("Board")]
@@ -41,7 +42,10 @@ public sealed class UIManager : MonoBehaviour
     [SerializeField, Range(0f, 1f)] private float previewPanEndNormalizedPosition;
     [SerializeField] private Vector2 wallTileOffset;
     [SerializeField, Min(0.1f)] private float wallTileScale = 1f;
+    [SerializeField, Min(0.1f)] private float wallTileWidthScale = 1f;
+    [SerializeField, Min(0.1f)] private float wallTileVisualHeightScale = 1f;
     [SerializeField, Min(0.1f)] private float wallTileHeightMultiplier = 1f;
+    [SerializeField] private float wallTileSpacing;
     [SerializeField] private Vector2 groundOffset;
     [SerializeField, Min(0.1f)] private float groundHeightMultiplier = 1f;
     [SerializeField] private Vector2 finalOffset;
@@ -59,6 +63,8 @@ public sealed class UIManager : MonoBehaviour
     [Header("Game Over")]
     [SerializeField] private GameObject gameOverPanel = null!;
     [SerializeField] private TMP_Text gameOverText = null!;
+    [SerializeField] private TMP_Text gameOverReachedTowerHeightText;
+    [SerializeField] private TMP_Text gameOverBestTowerHeightText;
     [SerializeField] private Button restartButton = null!;
     [SerializeField] private Button mainMenuButton = null!;
 
@@ -97,7 +103,10 @@ public sealed class UIManager : MonoBehaviour
     private float cachedPreviewPanEndNormalizedPosition;
     private Vector2 cachedWallTileOffset;
     private float cachedWallTileScale;
+    private float cachedWallTileWidthScale;
+    private float cachedWallTileVisualHeightScale;
     private float cachedWallTileHeightMultiplier;
+    private float cachedWallTileSpacing;
     private Vector2 cachedGroundOffset;
     private float cachedGroundHeightMultiplier;
     private Vector2 cachedFinalOffset;
@@ -156,6 +165,8 @@ public sealed class UIManager : MonoBehaviour
         {
             HideGameOver();
         }
+
+        ApplyTopBarStatusVisuals(false);
     }
 
     private void OnDestroy()
@@ -271,10 +282,27 @@ public sealed class UIManager : MonoBehaviour
 
     public void RefreshHud(int currentTowerHeight, int bestTowerHeight, int activeFloorNumber, PlayerState playerState)
     {
-        currentFloorText.text = $"현재 층: {activeFloorNumber} / {currentTowerHeight}";
-        bestFloorText.text = $"최고 타워 높이: {bestTowerHeight}";
-        shieldStatusText.text = playerState.HasShield ? "방패: 보유 중" : "방패: 없음";
-        curseStatusText.text = "저주: 뽑으면 2칸 뒤로";
+        currentFloorText.text = $" {activeFloorNumber} / {currentTowerHeight}";
+        bestFloorText.text = $" {bestTowerHeight}";
+        ApplyTopBarStatusVisuals(playerState.HasShield);
+    }
+
+    private void ApplyTopBarStatusVisuals(bool hasShield)
+    {
+        if (shieldStatusImage != null)
+        {
+            shieldStatusImage.gameObject.SetActive(hasShield);
+        }
+
+        if (shieldStatusText != null)
+        {
+            shieldStatusText.gameObject.SetActive(false);
+        }
+
+        if (curseStatusText != null)
+        {
+            curseStatusText.gameObject.SetActive(false);
+        }
     }
 
     public void SetAllCardInteraction(IReadOnlyList<CardData> cards, bool interactable)
@@ -458,6 +486,25 @@ public sealed class UIManager : MonoBehaviour
     public void ShowGameOver(int currentTowerHeight, int bestTowerHeight)
     {
         gameOverPanel.SetActive(true);
+        if (gameOverReachedTowerHeightText != null || gameOverBestTowerHeightText != null)
+        {
+            if (gameOverText != null)
+            {
+                gameOverText.text = "게임 오버";
+            }
+
+            if (gameOverReachedTowerHeightText != null)
+            {
+                gameOverReachedTowerHeightText.text = currentTowerHeight.ToString();
+            }
+
+            if (gameOverBestTowerHeightText != null)
+            {
+                gameOverBestTowerHeightText.text = bestTowerHeight.ToString();
+            }
+
+            return;
+        }
         gameOverText.text = $"게임 오버\n도달 타워 높이: {currentTowerHeight}\n최고 타워 높이: {bestTowerHeight}";
     }
 
@@ -465,8 +512,6 @@ public sealed class UIManager : MonoBehaviour
     {
         return currentFloorText != null &&
             bestFloorText != null &&
-            shieldStatusText != null &&
-            curseStatusText != null &&
             statusMessageText != null &&
             boardScrollRect != null &&
             cardContentRoot != null &&
@@ -746,10 +791,11 @@ public sealed class UIManager : MonoBehaviour
             return;
         }
 
+        bool shouldRefreshBoardBackground = HasBoardBackgroundTuningChanged();
         CacheBoardTuning();
         RebuildBoardLayout();
 
-        if (boardScrollRect != null)
+        if (shouldRefreshBoardBackground && boardScrollRect != null)
         {
             UpdateBoardBackground(boardScrollRect.verticalNormalizedPosition);
         }
@@ -770,7 +816,36 @@ public sealed class UIManager : MonoBehaviour
             !Mathf.Approximately(cachedPreviewPanEndNormalizedPosition, previewPanEndNormalizedPosition) ||
             cachedWallTileOffset != wallTileOffset ||
             !Mathf.Approximately(cachedWallTileScale, wallTileScale) ||
+            !Mathf.Approximately(cachedWallTileWidthScale, wallTileWidthScale) ||
+            !Mathf.Approximately(cachedWallTileVisualHeightScale, wallTileVisualHeightScale) ||
             !Mathf.Approximately(cachedWallTileHeightMultiplier, wallTileHeightMultiplier) ||
+            !Mathf.Approximately(cachedWallTileSpacing, wallTileSpacing) ||
+            cachedGroundOffset != groundOffset ||
+            !Mathf.Approximately(cachedGroundHeightMultiplier, groundHeightMultiplier) ||
+            cachedFinalOffset != finalOffset ||
+            !Mathf.Approximately(cachedFinalHeightMultiplier, finalHeightMultiplier) ||
+            cachedWallSprite != wallSprite ||
+            cachedLastWallSprite != lastWallSprite ||
+            cachedGroundSprite != groundSprite ||
+            cachedFinalSprite != finalSprite ||
+            cachedFallbackWallColor != fallbackWallColor ||
+            cachedFallbackGroundColor != fallbackGroundColor ||
+            cachedFallbackFinalColor != fallbackFinalColor;
+    }
+
+    private bool HasBoardBackgroundTuningChanged()
+    {
+        if (!hasCachedBoardTuning)
+        {
+            return true;
+        }
+
+        return !Mathf.Approximately(cachedWallTileScale, wallTileScale) ||
+            !Mathf.Approximately(cachedWallTileWidthScale, wallTileWidthScale) ||
+            !Mathf.Approximately(cachedWallTileVisualHeightScale, wallTileVisualHeightScale) ||
+            !Mathf.Approximately(cachedWallTileHeightMultiplier, wallTileHeightMultiplier) ||
+            !Mathf.Approximately(cachedWallTileSpacing, wallTileSpacing) ||
+            cachedWallTileOffset != wallTileOffset ||
             cachedGroundOffset != groundOffset ||
             !Mathf.Approximately(cachedGroundHeightMultiplier, groundHeightMultiplier) ||
             cachedFinalOffset != finalOffset ||
@@ -795,7 +870,10 @@ public sealed class UIManager : MonoBehaviour
         cachedPreviewPanEndNormalizedPosition = previewPanEndNormalizedPosition;
         cachedWallTileOffset = wallTileOffset;
         cachedWallTileScale = wallTileScale;
+        cachedWallTileWidthScale = wallTileWidthScale;
+        cachedWallTileVisualHeightScale = wallTileVisualHeightScale;
         cachedWallTileHeightMultiplier = wallTileHeightMultiplier;
+        cachedWallTileSpacing = wallTileSpacing;
         cachedGroundOffset = groundOffset;
         cachedGroundHeightMultiplier = groundHeightMultiplier;
         cachedFinalOffset = finalOffset;
@@ -835,11 +913,12 @@ public sealed class UIManager : MonoBehaviour
         float contentHeight = Mathf.Max(viewportHeight, cardContentRoot != null ? cardContentRoot.rect.height : viewportHeight);
         float scrollOffset = (1f - Mathf.Clamp01(scrollNormalizedPosition)) * Mathf.Max(0f, contentHeight - viewportHeight);
         float rowHeight = GetBackgroundRowHeight() * wallTileHeightMultiplier;
+        float rowStep = rowHeight + wallTileSpacing;
         int rowCount = GetBoardWallRowCount();
         Vector2 bottomAnchoredWallOffset = new(0f, -rowHeight);
 
         EnsureBoardWallTileCount(rowCount);
-        UpdateBoardWallTiles(rowCount, rowHeight, contentHeight, scrollOffset, bottomAnchoredWallOffset);
+        UpdateBoardWallTiles(rowCount, rowHeight, rowStep, contentHeight, scrollOffset, bottomAnchoredWallOffset);
 
         if (boardGroundRect != null)
         {
@@ -848,7 +927,7 @@ public sealed class UIManager : MonoBehaviour
             boardGroundImage.preserveAspect = true;
 
             float groundHeight = Mathf.Max(90f, viewportHeight * 0.16f) * groundHeightMultiplier;
-            Vector2 groundBasePosition = new Vector2(0f, scrollOffset - (rowCount * rowHeight)) + bottomAnchoredWallOffset;
+            Vector2 groundBasePosition = new Vector2(0f, scrollOffset - (rowCount * rowStep)) + bottomAnchoredWallOffset;
 
             boardGroundRect.anchorMin = new Vector2(0f, 1f);
             boardGroundRect.anchorMax = new Vector2(1f, 1f);
@@ -927,7 +1006,7 @@ public sealed class UIManager : MonoBehaviour
         }
     }
 
-    private void UpdateBoardWallTiles(int rowCount, float rowHeight, float contentHeight, float scrollOffset, Vector2 bottomAnchoredWallOffset)
+    private void UpdateBoardWallTiles(int rowCount, float rowHeight, float rowStep, float contentHeight, float scrollOffset, Vector2 bottomAnchoredWallOffset)
     {
         for (int i = 0; i < rowCount; i++)
         {
@@ -942,8 +1021,11 @@ public sealed class UIManager : MonoBehaviour
             tileRect.pivot = new Vector2(0.5f, 1f);
             tileRect.sizeDelta = new Vector2(0f, rowHeight);
             float reversedRowIndex = rowCount - 1 - i;
-            tileRect.anchoredPosition = new Vector2(0f, scrollOffset - (reversedRowIndex * rowHeight)) + wallTileOffset + bottomAnchoredWallOffset;
-            tileRect.localScale = new Vector3(wallTileScale, wallTileScale, 1f);
+            tileRect.anchoredPosition = new Vector2(0f, scrollOffset - (reversedRowIndex * rowStep)) + wallTileOffset + bottomAnchoredWallOffset;
+            tileRect.localScale = new Vector3(
+                wallTileScale * wallTileWidthScale,
+                wallTileScale * wallTileVisualHeightScale,
+                1f);
         }
     }
 
