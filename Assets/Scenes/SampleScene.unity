@@ -3637,14 +3637,14 @@ MonoBehaviour:
   fallbackFinalColor: {r: 0.68, g: 0.58, b: 0.28, a: 1}
   cardContentOffset: {x: 0, y: -30}
   cardContentScale: 1
-  cardWidthScale: 1
-  cardHeightScale: 1
+  cardWidthScale: 0.8
+  cardHeightScale: 0.8
   alignCardContentFromBottom: 1
   bottomAlignedCardOffset: {x: 0, y: 0}
   rowFocusOffsetY: 0
   previewPanEndNormalizedPosition: 0
   wallTileOffset: {x: 0, y: 0}
-  wallTileScale: 1
+  wallTileScale: 1.18
   wallTileWidthScale: 1
   wallTileVisualHeightScale: 1
   wallTileHeightMultiplier: 1

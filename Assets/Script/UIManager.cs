@@ -56,9 +56,6 @@ public sealed class UIManager : MonoBehaviour
     [SerializeField, Min(0.1f)] private float wallTileHeightMultiplier = 1f;
     [SerializeField] private float wallTileSpacing;
     [SerializeField] private Vector2 groundOffset;
-    [SerializeField, Min(0.1f)] private float groundScale = 1f;
-    [SerializeField, Min(0.1f)] private float groundWidthScale = 1f;
-    [SerializeField, Min(0.1f)] private float groundVisualHeightScale = 1f;
     [SerializeField, Min(0.1f)] private float groundHeightMultiplier = 1f;
     [SerializeField] private Vector2 finalOffset;
     [SerializeField, Min(0.1f)] private float finalHeightMultiplier = 1f;
@@ -126,9 +123,6 @@ public sealed class UIManager : MonoBehaviour
     private float cachedWallTileHeightMultiplier;
     private float cachedWallTileSpacing;
     private Vector2 cachedGroundOffset;
-    private float cachedGroundScale;
-    private float cachedGroundWidthScale;
-    private float cachedGroundVisualHeightScale;
     private float cachedGroundHeightMultiplier;
     private Vector2 cachedFinalOffset;
     private float cachedFinalHeightMultiplier;
@@ -884,6 +878,8 @@ public sealed class UIManager : MonoBehaviour
         if (boardBackgroundRoot != null || boardScrollRect == null)
         {
             CacheBackgroundRects();
+            EnsureBoardGroundImageIfNeeded();
+            LayoutBoardGround();
             return;
         }
 
@@ -905,9 +901,9 @@ public sealed class UIManager : MonoBehaviour
 
         boardWallImage = CreateBackgroundImage("WallTileTemplate", boardBackgroundRoot, wallSprite, fallbackWallColor);
         boardWallImage.gameObject.SetActive(false);
-        boardGroundImage = CreateBackgroundImage("Ground", boardBackgroundRoot, groundSprite, fallbackGroundColor);
         boardFinalImage = CreateBackgroundImage("FinalFloor", boardBackgroundRoot, finalSprite, fallbackFinalColor);
         CacheBackgroundRects();
+        EnsureBoardGroundImageIfNeeded();
         UpdateBoardBackground(1f);
     }
 
@@ -981,9 +977,6 @@ public sealed class UIManager : MonoBehaviour
             !Mathf.Approximately(cachedWallTileHeightMultiplier, wallTileHeightMultiplier) ||
             !Mathf.Approximately(cachedWallTileSpacing, wallTileSpacing) ||
             cachedGroundOffset != groundOffset ||
-            !Mathf.Approximately(cachedGroundScale, groundScale) ||
-            !Mathf.Approximately(cachedGroundWidthScale, groundWidthScale) ||
-            !Mathf.Approximately(cachedGroundVisualHeightScale, groundVisualHeightScale) ||
             !Mathf.Approximately(cachedGroundHeightMultiplier, groundHeightMultiplier) ||
             cachedFinalOffset != finalOffset ||
             !Mathf.Approximately(cachedFinalHeightMultiplier, finalHeightMultiplier) ||
@@ -1010,9 +1003,6 @@ public sealed class UIManager : MonoBehaviour
             !Mathf.Approximately(cachedWallTileSpacing, wallTileSpacing) ||
             cachedWallTileOffset != wallTileOffset ||
             cachedGroundOffset != groundOffset ||
-            !Mathf.Approximately(cachedGroundScale, groundScale) ||
-            !Mathf.Approximately(cachedGroundWidthScale, groundWidthScale) ||
-            !Mathf.Approximately(cachedGroundVisualHeightScale, groundVisualHeightScale) ||
             !Mathf.Approximately(cachedGroundHeightMultiplier, groundHeightMultiplier) ||
             cachedFinalOffset != finalOffset ||
             !Mathf.Approximately(cachedFinalHeightMultiplier, finalHeightMultiplier) ||
@@ -1043,9 +1033,6 @@ public sealed class UIManager : MonoBehaviour
         cachedWallTileHeightMultiplier = wallTileHeightMultiplier;
         cachedWallTileSpacing = wallTileSpacing;
         cachedGroundOffset = groundOffset;
-        cachedGroundScale = groundScale;
-        cachedGroundWidthScale = groundWidthScale;
-        cachedGroundVisualHeightScale = groundVisualHeightScale;
         cachedGroundHeightMultiplier = groundHeightMultiplier;
         cachedFinalOffset = finalOffset;
         cachedFinalHeightMultiplier = finalHeightMultiplier;
@@ -1065,6 +1052,56 @@ public sealed class UIManager : MonoBehaviour
         boardFinalRect = boardFinalImage != null ? boardFinalImage.transform as RectTransform : null;
     }
 
+    private void EnsureBoardGroundImageIfNeeded()
+    {
+        if (boardScrollRect == null)
+        {
+            return;
+        }
+
+        Transform groundParent = boardScrollRect.viewport != null
+            ? boardScrollRect.viewport
+            : boardScrollRect.transform;
+
+        if (boardGroundImage == null)
+        {
+            boardGroundImage = CreateBackgroundImage("Ground", groundParent, groundSprite, fallbackGroundColor);
+        }
+        else if (boardGroundImage.transform.parent != groundParent)
+        {
+            boardGroundImage.transform.SetParent(groundParent, false);
+        }
+
+        boardGroundImage.transform.SetAsFirstSibling();
+        boardGroundRect = boardGroundImage.transform as RectTransform;
+    }
+
+    private void LayoutBoardGround()
+    {
+        if (boardGroundImage == null || boardGroundRect == null || boardScrollRect == null)
+        {
+            return;
+        }
+
+        RectTransform viewport = boardScrollRect.viewport != null
+            ? boardScrollRect.viewport
+            : boardScrollRect.GetComponent<RectTransform>();
+        float viewportHeight = viewport != null ? viewport.rect.height : 0f;
+        float groundHeight = Mathf.Max(90f, viewportHeight * 0.16f) * groundHeightMultiplier;
+
+        boardGroundImage.sprite = groundSprite;
+        boardGroundImage.color = groundSprite != null ? Color.white : fallbackGroundColor;
+        boardGroundImage.preserveAspect = false;
+
+        boardGroundRect.anchorMin = new Vector2(0f, 0f);
+        boardGroundRect.anchorMax = new Vector2(1f, 0f);
+        boardGroundRect.pivot = new Vector2(0.5f, 0f);
+        boardGroundRect.sizeDelta = new Vector2(0f, groundHeight);
+        boardGroundRect.anchoredPosition = groundOffset;
+        boardGroundRect.localScale = Vector3.one;
+        boardGroundRect.gameObject.SetActive(true);
+    }
+
     private void UpdateBoardBackground(float scrollNormalizedPosition)
     {
         if (boardBackgroundRoot == null)
@@ -1073,20 +1110,8 @@ public sealed class UIManager : MonoBehaviour
         }
 
         CacheBackgroundRects();
-
-        RectTransform viewport = boardScrollRect != null && boardScrollRect.viewport != null
-            ? boardScrollRect.viewport
-            : boardScrollRect != null
-                ? boardScrollRect.GetComponent<RectTransform>()
-                : null;
-
-        float viewportHeight = viewport != null ? viewport.rect.height : boardBackgroundRoot.rect.height;
-        float viewportWidth = viewport != null ? viewport.rect.width : boardBackgroundRoot.rect.width;
-        float contentHeight = Mathf.Max(viewportHeight, cardContentRoot != null ? cardContentRoot.rect.height : viewportHeight);
-        float scrollOffset = (1f - Mathf.Clamp01(scrollNormalizedPosition)) * Mathf.Max(0f, contentHeight - viewportHeight);
-        float rowHeight = GetBoardRowHeight();
-        float rowStep = rowHeight + GetBaseCardSpacingY();
-        int rowCount = GetBoardWallRowCount();
+        EnsureBoardGroundImageIfNeeded();
+        LayoutBoardGround();
 
         for (int i = 0; i < boardWallTiles.Count; i++)
         {
@@ -1096,44 +1121,6 @@ public sealed class UIManager : MonoBehaviour
         if (boardWallImage != null)
         {
             boardWallImage.gameObject.SetActive(false);
-        }
-
-        if (boardGroundRect != null)
-        {
-            boardGroundImage.sprite = groundSprite;
-            boardGroundImage.color = groundSprite != null ? Color.white : fallbackGroundColor;
-            boardGroundImage.preserveAspect = true;
-
-            float groundHeight = Mathf.Max(90f, viewportHeight * 0.16f) * groundHeightMultiplier;
-            Vector2 groundBasePosition = new Vector2(0f, scrollOffset - (rowCount * rowStep));
-
-            boardGroundRect.anchorMin = new Vector2(0.5f, 1f);
-            boardGroundRect.anchorMax = new Vector2(0.5f, 1f);
-            boardGroundRect.pivot = new Vector2(0.5f, 1f);
-            if (groundSprite != null)
-            {
-                boardGroundImage.SetNativeSize();
-            }
-            else
-            {
-                boardGroundRect.sizeDelta = new Vector2(viewportWidth, groundHeight);
-            }
-
-            boardGroundRect.localScale = new Vector3(
-                groundScale * groundWidthScale,
-                groundScale * groundVisualHeightScale * groundHeightMultiplier,
-                1f);
-
-            if (groundSprite == null)
-            {
-                boardGroundRect.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, groundHeight);
-            }
-
-            boardGroundRect.anchoredPosition = groundBasePosition + groundOffset;
-
-            float groundTopY = boardGroundRect.anchoredPosition.y;
-            bool isGroundVisible = groundTopY > -viewportHeight;
-            boardGroundRect.gameObject.SetActive(isGroundVisible);
         }
 
         if (boardFinalRect != null)
@@ -1284,11 +1271,6 @@ public sealed class UIManager : MonoBehaviour
             boardWallTiles[i].sprite = tileSprite;
             boardWallTiles[i].color = tileSprite != null ? Color.white : fallbackWallColor;
             boardWallTiles[i].preserveAspect = true;
-        }
-
-        if (boardGroundRect != null)
-        {
-            boardGroundRect.transform.SetAsLastSibling();
         }
 
         if (boardFinalRect != null)
