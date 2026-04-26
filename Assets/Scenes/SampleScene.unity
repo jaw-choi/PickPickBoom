@@ -3635,7 +3635,7 @@ MonoBehaviour:
   fallbackWallColor: {r: 0.24, g: 0.28, b: 0.33, a: 1}
   fallbackGroundColor: {r: 0.26, g: 0.3, b: 0.18, a: 1}
   fallbackFinalColor: {r: 0.68, g: 0.58, b: 0.28, a: 1}
-  cardContentOffset: {x: 0, y: -30}
+  cardContentOffset: {x: 0, y: -40}
   cardContentScale: 1
   cardWidthScale: 0.8
   cardHeightScale: 0.8
@@ -3645,14 +3645,11 @@ MonoBehaviour:
   previewPanEndNormalizedPosition: 0
   wallTileOffset: {x: 0, y: 0}
   wallTileScale: 1.18
-  wallTileWidthScale: 1
+  wallTileWidthScale: 1.03
   wallTileVisualHeightScale: 1
   wallTileHeightMultiplier: 1
   wallTileSpacing: 0
   groundOffset: {x: 0, y: 0}
-  groundScale: 1
-  groundWidthScale: 1
-  groundVisualHeightScale: 1
   groundHeightMultiplier: 1
   finalOffset: {x: 0, y: 0}
   finalHeightMultiplier: 1

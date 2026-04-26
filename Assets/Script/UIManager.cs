@@ -1072,7 +1072,7 @@ public sealed class UIManager : MonoBehaviour
             boardGroundImage.transform.SetParent(groundParent, false);
         }
 
-        boardGroundImage.transform.SetAsFirstSibling();
+        boardGroundImage.transform.SetAsLastSibling();
         boardGroundRect = boardGroundImage.transform as RectTransform;
     }
 
