@@ -3641,8 +3641,8 @@ MonoBehaviour:
   cardHeightScale: 0.8
   alignCardContentFromBottom: 1
   bottomAlignedCardOffset: {x: 0, y: 0}
-  rowFocusOffsetY: 0
-  previewPanEndNormalizedPosition: 0
+  rowFocusOffsetY: -340
+  previewPanEndOffsetY: 0
   wallTileOffset: {x: 0, y: 0}
   wallTileScale: 1.18
   wallTileWidthScale: 1.03
@@ -3650,6 +3650,7 @@ MonoBehaviour:
   wallTileHeightMultiplier: 1
   wallTileSpacing: 0
   groundOffset: {x: 0, y: 0}
+  groundWallGap: -70
   groundHeightMultiplier: 1
   finalOffset: {x: 0, y: 0}
   finalHeightMultiplier: 1
