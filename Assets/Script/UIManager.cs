@@ -48,7 +48,7 @@ public sealed class UIManager : MonoBehaviour
     [SerializeField] private bool alignCardContentFromBottom = true;
     [SerializeField] private Vector2 bottomAlignedCardOffset;
     [SerializeField, Range(-600f, 600f)] private float rowFocusOffsetY;
-    [SerializeField, Range(0f, 1f)] private float previewPanEndNormalizedPosition;
+    [SerializeField] private float previewPanEndOffsetY;
     [SerializeField] private Vector2 wallTileOffset;
     [SerializeField, Min(0.1f)] private float wallTileScale = 1f;
     [SerializeField, Min(0.1f)] private float wallTileWidthScale = 1f;
@@ -105,6 +105,7 @@ public sealed class UIManager : MonoBehaviour
     private RectTransform boardWallRect;
     private RectTransform boardGroundRect;
     private RectTransform boardFinalRect;
+    private float boardGroundScrollOffsetY;
     private readonly List<Image> boardWallTiles = new();
     private readonly List<BoardRowView> boardRows = new();
     private bool hasCachedBoardTuning;
@@ -115,7 +116,7 @@ public sealed class UIManager : MonoBehaviour
     private bool cachedAlignCardContentFromBottom;
     private Vector2 cachedBottomAlignedCardOffset;
     private float cachedRowFocusOffsetY;
-    private float cachedPreviewPanEndNormalizedPosition;
+    private float cachedPreviewPanEndOffsetY;
     private Vector2 cachedWallTileOffset;
     private float cachedWallTileScale;
     private float cachedWallTileWidthScale;
@@ -383,6 +384,7 @@ public sealed class UIManager : MonoBehaviour
 
         Canvas.ForceUpdateCanvases();
         RebuildBoardLayout();
+        ResetBoardGroundScrollOffset();
         boardScrollRect.verticalNormalizedPosition = 1f;
         UpdateBoardBackground(1f);
     }
@@ -409,9 +411,10 @@ public sealed class UIManager : MonoBehaviour
         }
 
         RebuildBoardLayout();
+        ResetBoardGroundScrollOffset();
         boardScrollRect.verticalNormalizedPosition = 1f;
         UpdateBoardBackground(1f);
-        float previewPanEndPosition = Mathf.Clamp01(previewPanEndNormalizedPosition);
+        float previewPanEndPosition = GetPreviewPanEndNormalizedPosition(rowCount);
 
         float duration = Mathf.Max(0f, rowCount - 1) * perRowDuration;
         if (duration <= 0f)
@@ -436,6 +439,18 @@ public sealed class UIManager : MonoBehaviour
         UpdateBoardBackground(previewPanEndPosition);
     }
 
+    private float GetPreviewPanEndNormalizedPosition(int rowCount)
+    {
+        float maxScrollOffset = GetMaxScrollOffset();
+        if (maxScrollOffset <= 0f)
+        {
+            return 1f;
+        }
+
+        float targetOffset = GetScrollOffsetForRow(rowCount - 1, rowCount) + previewPanEndOffsetY;
+        return GetNormalizedPositionForScrollOffset(targetOffset, maxScrollOffset);
+    }
+
     public IEnumerator PlayScrollToRow(int fromRowContentIndex, int toRowContentIndex, int totalRows, float duration)
     {
         if (boardScrollRect == null)
@@ -450,11 +465,18 @@ public sealed class UIManager : MonoBehaviour
         float target = GetNormalizedPositionForRow(toRowContentIndex, totalRows);
         boardScrollRect.verticalNormalizedPosition = start;
         UpdateBoardBackground(start);
+        bool shouldMoveGroundWithScroll = ShouldMoveGroundWithFirstRowAdvance(fromRowContentIndex, totalRows);
+        float groundStartScrollOffset = shouldMoveGroundWithScroll ? GetScrollOffsetForNormalizedPosition(start) : 0f;
 
         if (duration <= 0f)
         {
             boardScrollRect.verticalNormalizedPosition = target;
             UpdateBoardBackground(target);
+            if (shouldMoveGroundWithScroll)
+            {
+                MoveGroundWithScrollOffset(groundStartScrollOffset, target);
+            }
+
             yield break;
         }
 
@@ -466,11 +488,21 @@ public sealed class UIManager : MonoBehaviour
             float position = Mathf.Lerp(start, target, t);
             boardScrollRect.verticalNormalizedPosition = position;
             UpdateBoardBackground(position);
+            if (shouldMoveGroundWithScroll)
+            {
+                MoveGroundWithScrollOffset(groundStartScrollOffset, position);
+            }
+
             yield return null;
         }
 
         boardScrollRect.verticalNormalizedPosition = target;
         UpdateBoardBackground(target);
+        if (shouldMoveGroundWithScroll)
+        {
+            MoveGroundWithScrollOffset(groundStartScrollOffset, target);
+        }
+
         boardScrollRect.StopMovement();
     }
 
@@ -704,28 +736,114 @@ public sealed class UIManager : MonoBehaviour
             return 1f;
         }
 
+        float maxScrollOffset = GetMaxScrollOffset();
+        if (maxScrollOffset <= 0f)
+        {
+            return 1f;
+        }
+
+        return GetNormalizedPositionForScrollOffset(GetScrollOffsetForRow(rowContentIndex, totalRows), maxScrollOffset);
+    }
+
+    private float GetScrollOffsetForRow(int rowContentIndex, int totalRows)
+    {
+        if (boardScrollRect == null || cardContentRoot == null || totalRows <= 0)
+        {
+            return 0f;
+        }
+
         RectTransform viewport = boardScrollRect.viewport != null
             ? boardScrollRect.viewport
             : boardScrollRect.GetComponent<RectTransform>();
 
         GridLayoutGroup gridLayoutGroup = cardContentRoot.GetComponent<GridLayoutGroup>();
         float viewportHeight = viewport.rect.height;
-        float contentHeight = cardContentRoot.rect.height;
-        float maxScrollOffset = Mathf.Max(0f, contentHeight - viewportHeight);
-
-        if (maxScrollOffset <= 0f)
-        {
-            return 1f;
-        }
-
+        float maxScrollOffset = GetMaxScrollOffset();
         float cellHeight = GetRowCellHeight(gridLayoutGroup);
         float rowSpacing = gridLayoutGroup != null ? gridLayoutGroup.spacing.y : 0f;
         float paddingTop = gridLayoutGroup != null ? gridLayoutGroup.padding.top : 0f;
         float rowStride = cellHeight + rowSpacing;
         float rowCenterY = paddingTop + (rowContentIndex * rowStride) + (cellHeight * 0.5f);
-        float targetOffset = Mathf.Clamp(rowCenterY - (viewportHeight * 0.5f) + rowFocusOffsetY, 0f, maxScrollOffset);
+        return Mathf.Clamp(rowCenterY - (viewportHeight * 0.5f) + rowFocusOffsetY, 0f, maxScrollOffset);
+    }
 
-        return 1f - (targetOffset / maxScrollOffset);
+    private float GetMaxScrollOffset()
+    {
+        if (boardScrollRect == null || cardContentRoot == null)
+        {
+            return 0f;
+        }
+
+        RectTransform viewport = boardScrollRect.viewport != null
+            ? boardScrollRect.viewport
+            : boardScrollRect.GetComponent<RectTransform>();
+
+        float viewportHeight = viewport != null ? viewport.rect.height : 0f;
+        float contentHeight = cardContentRoot.rect.height;
+        return Mathf.Max(0f, contentHeight - viewportHeight);
+    }
+
+    private static float GetNormalizedPositionForScrollOffset(float scrollOffset, float maxScrollOffset)
+    {
+        if (maxScrollOffset <= 0f)
+        {
+            return 1f;
+        }
+
+        return 1f - (Mathf.Clamp(scrollOffset, 0f, maxScrollOffset) / maxScrollOffset);
+    }
+
+    private bool ShouldMoveGroundWithFirstRowAdvance(int fromRowContentIndex, int totalRows)
+    {
+        return boardGroundRect != null &&
+            totalRows > 1 &&
+            fromRowContentIndex == totalRows - 1;
+    }
+
+    private float GetScrollOffsetForNormalizedPosition(float normalizedPosition)
+    {
+        if (boardScrollRect == null || cardContentRoot == null)
+        {
+            return 0f;
+        }
+
+        RectTransform viewport = boardScrollRect.viewport != null
+            ? boardScrollRect.viewport
+            : boardScrollRect.GetComponent<RectTransform>();
+
+        float viewportHeight = viewport != null ? viewport.rect.height : 0f;
+        float contentHeight = cardContentRoot.rect.height;
+        float maxScrollOffset = Mathf.Max(0f, contentHeight - viewportHeight);
+        return (1f - Mathf.Clamp01(normalizedPosition)) * maxScrollOffset;
+    }
+
+    private void MoveGroundWithScrollOffset(float startScrollOffset, float normalizedPosition)
+    {
+        if (boardGroundRect == null)
+        {
+            return;
+        }
+
+        float currentScrollOffset = GetScrollOffsetForNormalizedPosition(normalizedPosition);
+        float groundMoveDistance = Mathf.Max(0f, startScrollOffset - currentScrollOffset);
+        boardGroundScrollOffsetY = -groundMoveDistance;
+        ApplyBoardGroundAnchoredPosition();
+    }
+
+    private void ResetBoardGroundScrollOffset()
+    {
+        boardGroundScrollOffsetY = 0f;
+        ApplyBoardGroundAnchoredPosition();
+    }
+
+    private void ApplyBoardGroundAnchoredPosition()
+    {
+        if (boardGroundRect == null)
+        {
+            return;
+        }
+
+        boardGroundRect.anchoredPosition = groundOffset + new Vector2(0f, boardGroundScrollOffsetY);
     }
 
     private void ApplyCenteredEdgePadding()
@@ -969,7 +1087,7 @@ public sealed class UIManager : MonoBehaviour
             cachedAlignCardContentFromBottom != alignCardContentFromBottom ||
             cachedBottomAlignedCardOffset != bottomAlignedCardOffset ||
             !Mathf.Approximately(cachedRowFocusOffsetY, rowFocusOffsetY) ||
-            !Mathf.Approximately(cachedPreviewPanEndNormalizedPosition, previewPanEndNormalizedPosition) ||
+            !Mathf.Approximately(cachedPreviewPanEndOffsetY, previewPanEndOffsetY) ||
             cachedWallTileOffset != wallTileOffset ||
             !Mathf.Approximately(cachedWallTileScale, wallTileScale) ||
             !Mathf.Approximately(cachedWallTileWidthScale, wallTileWidthScale) ||
@@ -1025,7 +1143,7 @@ public sealed class UIManager : MonoBehaviour
         cachedAlignCardContentFromBottom = alignCardContentFromBottom;
         cachedBottomAlignedCardOffset = bottomAlignedCardOffset;
         cachedRowFocusOffsetY = rowFocusOffsetY;
-        cachedPreviewPanEndNormalizedPosition = previewPanEndNormalizedPosition;
+        cachedPreviewPanEndOffsetY = previewPanEndOffsetY;
         cachedWallTileOffset = wallTileOffset;
         cachedWallTileScale = wallTileScale;
         cachedWallTileWidthScale = wallTileWidthScale;
@@ -1097,9 +1215,9 @@ public sealed class UIManager : MonoBehaviour
         boardGroundRect.anchorMax = new Vector2(1f, 0f);
         boardGroundRect.pivot = new Vector2(0.5f, 0f);
         boardGroundRect.sizeDelta = new Vector2(0f, groundHeight);
-        boardGroundRect.anchoredPosition = groundOffset;
         boardGroundRect.localScale = Vector3.one;
         boardGroundRect.gameObject.SetActive(true);
+        ApplyBoardGroundAnchoredPosition();
     }
 
     private void UpdateBoardBackground(float scrollNormalizedPosition)
