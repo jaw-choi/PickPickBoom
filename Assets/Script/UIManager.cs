@@ -41,22 +41,22 @@ public sealed class UIManager : MonoBehaviour
     [SerializeField] private Color fallbackFinalColor = new(0.68f, 0.58f, 0.28f, 1f);
 
     [Header("Board Layout Tuning")]
-    [SerializeField] private Vector2 cardContentOffset;
+    [SerializeField] private Vector2 cardContentOffset = new(0f, -40f);
     [SerializeField, Min(0.1f)] private float cardContentScale = 1f;
-    [SerializeField, Min(0.1f)] private float cardWidthScale = 1f;
-    [SerializeField, Min(0.1f)] private float cardHeightScale = 1f;
+    [SerializeField, Min(0.1f)] private float cardWidthScale = 0.8f;
+    [SerializeField, Min(0.1f)] private float cardHeightScale = 0.8f;
     [SerializeField] private bool alignCardContentFromBottom = true;
     [SerializeField] private Vector2 bottomAlignedCardOffset;
-    [SerializeField, Range(-600f, 600f)] private float rowFocusOffsetY;
+    [SerializeField, Range(-600f, 600f)] private float rowFocusOffsetY = -340f;
     [SerializeField] private float previewPanEndOffsetY;
     [SerializeField] private Vector2 wallTileOffset;
-    [SerializeField, Min(0.1f)] private float wallTileScale = 1f;
-    [SerializeField, Min(0.1f)] private float wallTileWidthScale = 1f;
+    [SerializeField, Min(0.1f)] private float wallTileScale = 1.18f;
+    [SerializeField, Min(0.1f)] private float wallTileWidthScale = 1.03f;
     [SerializeField, Min(0.1f)] private float wallTileVisualHeightScale = 1f;
     [SerializeField, Min(0.1f)] private float wallTileHeightMultiplier = 1f;
     [SerializeField] private float wallTileSpacing;
     [SerializeField] private Vector2 groundOffset;
-    [SerializeField] private float groundWallGap;
+    [SerializeField] private float groundWallGap = -70f;
     [SerializeField, Min(0.1f)] private float groundHeightMultiplier = 1f;
     [SerializeField] private Vector2 finalOffset;
     [SerializeField, Min(0.1f)] private float finalHeightMultiplier = 1f;
