@@ -609,8 +609,8 @@ public sealed class UIManager : MonoBehaviour
         RectTransform cardAnchorRect = cardAnchorObject.GetComponent<RectTransform>();
         cardAnchorRect.anchorMin = Vector2.zero;
         cardAnchorRect.anchorMax = Vector2.one;
-        cardAnchorRect.offsetMin = Vector2.zero;
-        cardAnchorRect.offsetMax = Vector2.zero;
+        cardAnchorRect.offsetMin = rowIndex == 0 ? new Vector2(0f, -40f) : Vector2.zero;
+        cardAnchorRect.offsetMax = rowIndex == 0 ? new Vector2(0f, -40f) : Vector2.zero;
         cardAnchorRect.pivot = new Vector2(0.5f, 0.5f);
 
         return new BoardRowView

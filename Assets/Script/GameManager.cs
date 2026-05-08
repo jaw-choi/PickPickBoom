@@ -26,6 +26,7 @@ public sealed class GameManager : MonoBehaviour
     private int bestTowerHeight;
     private int currentBoardRowCount;
     private int activeRowContentIndex;
+    private int gameOverCount;
 
     private void Start()
     {
@@ -217,6 +218,12 @@ public sealed class GameManager : MonoBehaviour
         RefreshIntroBestScores();
         uiManager.SetAllCardInteraction(currentFloorCards, false);
         uiManager.ShowGameOver(currentTowerHeight, bestTowerHeight);
+
+        gameOverCount++;
+        if (gameOverCount % 5 == 0 && AdManager.Instance != null)
+        {
+            AdManager.Instance.ShowInterstitialAd();
+        }
     }
 
     private IEnumerator ResolveGoodItem(CardData selectedCard, CardView selectedView, bool hideResultMessage)
